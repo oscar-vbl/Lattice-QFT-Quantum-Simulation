@@ -2,3 +2,5 @@
 QuantumSimulation/simpleSimulationZZZ.py
 AdvancePhysicsMaster/QuantumSimulation/new.py
 test.txt
+___pycache__/
+.vscode/

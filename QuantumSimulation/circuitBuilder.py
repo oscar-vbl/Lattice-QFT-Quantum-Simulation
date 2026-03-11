@@ -72,6 +72,14 @@ def addGate(circuit: QuantumCircuit, gate, ancilla=None):
         else:         qubit = qubitNum
         circuit.h(qubit)
 
+    elif gateType == "X":
+        # X gate (flips the state of the qubit)
+        qubitNum  = gate["qubit"]["Number"]
+        isAncilla = gate["qubit"].get("Ancilla", False)
+        if isAncilla: qubit = ancilla[qubitNum]
+        else:         qubit = qubitNum
+        circuit.x(qubit)
+
     elif gateType == "SDG":
         # S-Dagger gate
         qubitNum  = gate["qubit"]["Number"]

@@ -1,0 +1,45 @@
+{
+    "QubitsNumber": 6,
+    "Hamiltonian": {
+        "Type": "Schwinger",
+        "Gauge": "Temporal",
+        "Parameters": {
+            "L": 6,
+            "a": 0.5,
+            "m": 1,
+            "e0": 0
+        },
+        "Lambda_Charge_Penalty": 0
+    },
+    "Ansatz": {
+        "Type": "ExcitationPreserving",
+        "Entanglement": "circular",
+        "Initial State": {
+            "Vaccum": true,
+            "Staggered": true
+        },
+        "Minimizer": {
+            "Method": "COBYLA",
+            "Options": {
+                "maxiter": 200
+            }
+        },
+        "Ensure_Zero_Charge": true
+    },
+    "Temporal Evolution": {
+        "Time_Steps": 100,
+        "Total_Time": 10,
+        "Evolution_Gate": {
+            "Type": "Pauli",
+            "Synthesis": "TrotterSuzuki",
+            "Synthesis_Params": {"order": 2}
+        },
+        "Observables": {
+            "Observables_List": ["Energy", "Persistance"],
+            "Observables_Params": {
+                "Energy": {},
+                "Persistance": {}
+            }
+        }
+    }
+}

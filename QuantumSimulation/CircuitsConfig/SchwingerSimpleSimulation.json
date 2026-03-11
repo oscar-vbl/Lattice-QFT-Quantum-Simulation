@@ -1,0 +1,12 @@
+{
+    "Hamiltonian": {
+        "Type": "Schwinger",
+        "Gauge": "Temporal",
+        "Parameters": {
+            "L": 6,
+            "a": 0.5,
+            "m": 1,
+            "e0": 20
+        }
+    }
+}
