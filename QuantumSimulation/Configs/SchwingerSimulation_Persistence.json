@@ -6,7 +6,7 @@
         "Parameters": {
             "L": 10,
             "a": 0.5,
-            "m": 1,
+            "m": 0.1,
             "e0": 0
         },
         "Lambda_Charge_Penalty": 0
@@ -17,24 +17,31 @@
     "Ansatz": {
         "Type": "ExcitationPreserving",
         "Entanglement": "linear",
-        "Reps": 5,
+        "Reps": 4,
         "Initial State": {
             "Vacuum": true,
             "Staggered": true
         },
         "Init_Strategy": "random_small",
         "Minimizer": {
-            "Method": "COBYLA",
+            "Method": "L-BFGS-B",
             "Options": {
-                "maxiter": 3000,
-                "tol": 1e-6
+                "maxiter": 10000,
+                "ftol": 1e-5
             }
         },
         "Ensure_Zero_Charge": true
     },
     "Temporal Evolution": {
+        "Active": true,
         "Time_Steps": 100,
         "Total_Time": 10,
+        "Quench": {
+            "Active": true,
+            "Parameters_to_Change": {
+                "e0": 0.6
+            }
+        },
         "Evolution_Gate": {
             "Type": "Pauli",
             "Synthesis": "TrotterSuzuki",

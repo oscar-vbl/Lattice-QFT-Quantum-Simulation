@@ -3,7 +3,7 @@ from scipy.linalg import expm
 from qiskit import QuantumCircuit, AncillaRegister, ClassicalRegister, QuantumRegister
 from qiskit.circuit.library import RXGate, RYGate, RZGate, CXGate, UGate
 from qiskit.circuit.exceptions import CircuitError
-from qiskit.quantum_info import Statevector
+
 
 def buildCircuit(configuration):
     '''
@@ -47,7 +47,17 @@ def buildCircuit(configuration):
 
     return circuit
 
-def addGate(circuit: QuantumCircuit, gate, ancilla=None):
+def addGate(
+        circuit: QuantumCircuit,
+        gate: dict,
+        ancilla=None):
+    '''
+    Add a gate to the circuit according to the gate configuration.
+    Params:
+    - circuit: QuantumCircuit, the circuit to which the gate will be added.
+    - gate: dict, configuration of the gate to be added. Must include "gate" key specifying the type of gate and other keys depending on the gate type.
+    - ancilla: AncillaRegister, optional, the ancilla register if needed for the gate.
+    '''
     gateType = gate["gate"]
     if not ancilla: ancilla = circuit.ancillas
     if gateType == "CNOT":
@@ -139,58 +149,3 @@ def addGate(circuit: QuantumCircuit, gate, ancilla=None):
     else:
         raise print(f"ERROR: Unsupported gate type: {gateType}")
     
-
-def get_statevector_from_counts(counts):
-    '''
-    Convert measurement counts to a Statevector.
-
-    WARNING: Only for low number of qubits, as it reconstructs the full statevector.
-
-    Reconstructs a state from the output measurements of an experiment
-
-    Params:
-        *counts*: dict, measurement counts from a quantum job
-
-    Returns:
-        qiskit.quantum_info.Statevector
-    '''
-    # 1. Convert counts to probabilities
-    shots = sum(counts.values())
-    probs = {label: counts[label]/shots for label in counts}
-
-    # 2. Determine number of qubits
-    n = len(next(iter(counts)))  # length of bitstrings
-    dim = 2**n
-
-    # 3. Initialize amplitude vector
-    amps = np.zeros(dim, dtype=complex)
-
-    # 4. Fill amplitudes = sqrt(prob)
-    for bitstring, p in probs.items():
-        index = int(bitstring, 2)  # bitstring → basis index
-        amps[index] = np.sqrt(p)   # real, non-negative amplitude
-
-    # 5. Build statevector
-    sv = Statevector(amps)
-    return sv
-
-if __name__ == "__main__":
-    numQubits = 3
-    numAncilla = 1
-    dt = 0.1
-    gates = []
-    for qubit in range(numQubits):
-        gates += [
-            {'gate': 'CNOT', 'control': {"Number": qubit}, 'target': {"Number": 0, "Ancilla":True}},
-        ]
-    gates += [{'gate': 'RZ', 'qubit': {"Number": 0, "Ancilla":True}, 'angle': 2*dt}]
-    for qubit in reversed(range(numQubits)):
-        gates += [
-            {'gate': 'CNOT', 'control': {"Number": qubit}, 'target': {"Number": 0, "Ancilla":True}},
-        ]
-    configuration = {
-        "QubitsNumber": numQubits,
-        "AncillaQubits": numAncilla,
-        "Gates": gates
-    }
-    circuit = buildCircuit(configuration)

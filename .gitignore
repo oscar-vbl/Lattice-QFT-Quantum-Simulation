@@ -1,6 +1,11 @@
-*.pyc
 QuantumSimulation/simpleSimulationZZZ.py
-AdvancePhysicsMaster/QuantumSimulation/new.py
 test.txt
+*.pyc
 ___pycache__/
 .vscode/
+.venv/
+.ipynb_checkpoints/
+testFiles/
+Data/
+Plots/
+Circuits/

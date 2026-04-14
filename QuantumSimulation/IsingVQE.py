@@ -4,8 +4,43 @@ from circuitBuilder import buildCircuit, addGate
 from Utils import sortEigenstates, drawCircuitLatex
 from qiskit.quantum_info import SparsePauliOp
 from qiskit.providers.fake_provider import GenericBackendV2
-
+from qiskit.quantum_info import Statevector
 import numpy as np
+
+def get_statevector_from_counts(counts):
+    '''
+    Convert measurement counts to a Statevector.
+
+    WARNING: Only for low number of qubits, as it reconstructs the full statevector.
+
+    Reconstructs a state from the output measurements of an experiment
+
+    Params:
+        *counts*: dict, measurement counts from a quantum job
+
+    Returns:
+        qiskit.quantum_info.Statevector
+    '''
+    # 1. Convert counts to probabilities
+    shots = sum(counts.values())
+    probs = {label: counts[label]/shots for label in counts}
+
+    # 2. Determine number of qubits
+    n = len(next(iter(counts)))  # length of bitstrings
+    dim = 2**n
+
+    # 3. Initialize amplitude vector
+    amps = np.zeros(dim, dtype=complex)
+
+    # 4. Fill amplitudes = sqrt(prob)
+    for bitstring, p in probs.items():
+        index = int(bitstring, 2)  # bitstring → basis index
+        amps[index] = np.sqrt(p)   # real, non-negative amplitude
+
+    # 5. Build statevector
+    sv = Statevector(amps)
+    return sv
+
 
 def sigma_expectation(counts, qubit_indexes):
     shots = sum(counts.values())
