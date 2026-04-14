@@ -148,7 +148,7 @@ The class internally executes these steps in sequence:
                ↓
 ┌─────────────────────────────────┐
 │ 5. VQE: Optimize Vacuum State   │  (SchwingerSimulation.get_vacuum)
-│    ↓ Minimize ⟨ψ|H|ψ⟩          │
+│    ↓ Minimize ⟨ψ|H|ψ⟩            │
 │    ↓ Return |ψ_vac⟩ & E_0       │
 └──────────────┬──────────────────┘
                ↓

@@ -1,7 +1,6 @@
 import sys
 import numpy as np
 import pandas as pd
-import time
 import copy
 from pathlib import Path
 sys.path.append(Path(__file__).parent.parent.as_posix())
@@ -10,7 +9,6 @@ from _config import DATA_FOLDER  as data_folder
 from ResultsAnalysis import fit_persistence
 from Utils import getTimer, loadJsonConfig, parseDictToPlot, load_data, save_data
 from Plots import plot_gamma_vs_qubitNum, plot_persistenece_vs_time_regimes, plot_gamma_vs_e0, plot_gamma_vs_electricField
-from SchwingerSimulation import SchwingerSimulation
 from R00_ResultsCommon import get_simulation_data, load_evolution_and_initial
 
 def fit_persistence_e0(config,

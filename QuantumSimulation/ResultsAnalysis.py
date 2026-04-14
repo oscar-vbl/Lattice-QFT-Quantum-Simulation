@@ -4,23 +4,16 @@ Analysis utilities for Schwinger simulation calculations.
 This module provides tools to fit simulation results and validate theoretical formulas.
 """
 
-import os
 import sys
-sys.path.append(os.path.join(os.getcwd(), "QuantumSimulation"))
-from SchwingerSimulation import SchwingerSimulation
-from Plots import simplePlot, plot_simulated_vs_analytical
-from Utils import loadJsonConfig, getValidFileName, getTimer, parseDictToPlot
-from _config import PLOTS_FOLDER as plt_folder
-from _config import DATA_FOLDER  as data_folder
-import time
+from pathlib import Path
+sys.path.append(Path(__file__).parent.as_posix())
+from Plots import plot_simulated_vs_analytical
+from Utils import getTimer, parseDictToPlot
 import numpy as np
-import matplotlib.pyplot as plt
-import copy
 from scipy.optimize import curve_fit
 from scipy.signal import argrelmin
 from Operators import measure_electric_field
-from qiskit.quantum_info import SparsePauliOp, Statevector
-from qiskit import qpy
+from qiskit.quantum_info import Statevector
 
 def check_regime(L, a, m, e0):
     '''
