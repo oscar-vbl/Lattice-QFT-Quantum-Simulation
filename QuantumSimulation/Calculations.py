@@ -69,7 +69,6 @@ def calculatePairCreation(state: Statevector, qubits_num: int):
     '''
     Calculate the number of pairs created as the sum of the occupation numbers of all sites. The occupation number of a site is calculated as n_occ = (1 + <Z>) / 2, where <Z> is the expectation value of the Z operator on that site. For even sites (electrons) we count the number of electrons created as 1 - n_occ, while for odd sites (positrons) we count the number of positrons created as n_occ.    
     '''
-    value = 0
     # Number of electrons and positrons
     n_e, n_p = 0, 0
     for n in range(qubits_num):

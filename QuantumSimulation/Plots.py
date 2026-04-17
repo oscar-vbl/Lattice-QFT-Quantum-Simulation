@@ -116,7 +116,7 @@ def plot_simulated_vs_analytical(decay_model, persistence, t_values, gamma_simul
     log_p = np.log(persistence)
     # Linear fit to log(persistence) to check if it is a straight line (pure exponential decay)
     slope_lineal = np.polyfit(t_values, log_p, 1)
-    print(f"{getTimer()} INFO: log-linear slope: {-slope_lineal[0]:.4f}  (~Γ for pure exponential)")
+    print(f"{getTimer()} INFO: log-linear slope: {-slope_lineal[0]:.4f}")
     print(f"{getTimer()} INFO: R² of linear fit: {np.corrcoef(t_values, log_p)[0,1]**2:.4f}")
     ax2.annotate(f"log-linear slope: {slope_lineal[0]:.4f}\nR²: {np.corrcoef(t_values, log_p)[0,1]**2:.4f}",
                 xy=(0.95, 0.8), xycoords='axes fraction', fontsize=10, horizontalalignment='right', verticalalignment='top', bbox=dict(boxstyle='round', facecolor='white', alpha=0.5)) 

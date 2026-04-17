@@ -38,10 +38,13 @@ def load_evolution_and_initial(analysis_name, values,
         if use_simulated_data:
             # Load previously simulated data
             try:
-                # Load evolution data
-                evolution_data = load_data(analysis_name, evolution_temp.format(value=fileValue), indexSet="Time")
                 # Load initial state
                 initial_state  = load_data(analysis_name,  initial_state_temp.format(value=fileValue))
+            except:
+                initial_state  = None
+            try:
+                # Load evolution data
+                evolution_data = load_data(analysis_name, evolution_temp.format(value=fileValue), indexSet="Time")
                 # Store in dict
                 values_data[value] = {
                     "evolution_data": evolution_data,
@@ -54,6 +57,7 @@ def load_evolution_and_initial(analysis_name, values,
         else:
             # Skip loading data to run simulation
             data_is_loaded = False
+            initial_state  = None
         
         if not data_is_loaded:
             # Run simulation if no previous data is loaded and config is provided
@@ -68,7 +72,12 @@ def load_evolution_and_initial(analysis_name, values,
                         value_config["Hamiltonian"]["Parameters"]["L"] = value
                     else:
                         value_config["Hamiltonian"]["Parameters"][backup_key] = value
-                simulator, duration = get_simulation_data(value_config, initial_state=backup_initial_state)
+                if backup_initial_state is None and initial_state is not None and use_simulated_data:
+                    # Initial state could be loaded but not data
+                    simulation_initial_state = initial_state
+                else:
+                    simulation_initial_state = backup_initial_state
+                simulator, duration = get_simulation_data(value_config, initial_state=simulation_initial_state)
                 evolution_data = simulator.evolution_data
                 initial_state  = simulator.initial_state
                 values_data[value] = {

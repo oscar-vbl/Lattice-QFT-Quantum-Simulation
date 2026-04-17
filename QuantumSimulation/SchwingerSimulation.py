@@ -1,9 +1,10 @@
 # Main file for Schwinger simulation
 
+import sys
 import numpy as np
 import pandas as pd
 from typing import Callable, Any, Mapping, Iterable
-import tqdm
+from tqdm.auto import tqdm
 from qiskit.circuit.quantumcircuit import QuantumCircuit
 from circuitBuilder import buildCircuit, addGate
 from Operators import buildSchwingerHamiltonianTemporalGauge
@@ -128,6 +129,8 @@ class SchwingerSimulation:
 
         # Plot data (not developed yet, at very first stage)
         # Check ResultsSimulation for simple results examples
+        print(f"{getTimer()} INFO: Simulation ended.")
+        print("#" * 70 + "\n")
 
     def get_backend(self):
         backend_config  = self.config.get("Backend")
@@ -286,14 +289,18 @@ class SchwingerSimulation:
         if not self.config["Ansatz"].get("Minimizer", None):
             self.config["Ansatz"]["Minimizer"] = {}
 
+        minimizer_method = self.config["Ansatz"]["Minimizer"].get("Method", "COBYLA")
         # IMPROVED: Increased default maxiter from 100 to 2000
-        default_options = {"maxiter": 2000, "tol": 1e-6}
+        if minimizer_method == "L-BFGS-B":
+            default_options = {"maxiter": 2000, "gtol": 1e-6}
+        else:
+            default_options = {"maxiter": 2000, "tol": 1e-6}
         user_options = self.config["Ansatz"]["Minimizer"].get("Options", {})
         # Merge: user options override defaults
         final_options = {**default_options, **user_options}
         
         minimize_params = {
-            "method": self.config["Ansatz"]["Minimizer"].get("Method", "COBYLA"),
+            "method": minimizer_method,
             "options": final_options,
             **self.config["Ansatz"]["Minimizer"].get("AdditionalParams", {})
         }
@@ -313,9 +320,15 @@ class SchwingerSimulation:
             except: pass
 
         max_iter = final_options.get('maxiter', 2000)        
-        with tqdm(total=max_iter, desc="VQE Optimization", unit="iter") as pbar:
+        with tqdm(total=max_iter, desc="VQE Optimization", unit="iter", ncols=80, file=sys.stdout, leave=True, dynamic_ncols=False) as pbar:
             result = minimize(self.energy_cost_function, initial_state_params, **minimize_params,
                             callback=callback)
+            # Update bar to show actual iterations
+            if hasattr(result, 'nit'):
+                pbar.total = result.nit
+                pbar.n = result.nit
+                pbar.refresh()
+
         vacuum_parameters = result.x
         vacuum_state      = self.ansatz.assign_parameters(vacuum_parameters)
         vacuum_energy     = result.fun
@@ -451,29 +464,30 @@ class SchwingerSimulation:
             del observables_data["Pair_Creation"]
 
         # Iterate over time steps
-        for t in tqdm(range(time_steps), desc="Evolving state", unit="step"):
-            for obs in observables_list:
-                spec_params = observables_params.get(obs, None)
-                value = self.calculate_observable(obs, state, initial_state, spec_params=spec_params)
-                if obs == "Pair_Creation":
-                    n_e, n_p = value
-                    observables_data[f"{obs}_electron"].append(n_e)
-                    observables_data[f"{obs}_positron"].append(n_p)
-                    observables_data[f"{obs}_balance"].append(n_e - n_p)
-                else:
-                    observables_data[obs].append(value)
+        with tqdm(range(time_steps), desc="Evolving state", unit="step", ncols=80, file=sys.stdout, leave=True, dynamic_ncols=False) as pbar:
+            for t in pbar:
+                for obs in observables_list:
+                    spec_params = observables_params.get(obs, None)
+                    value = self.calculate_observable(obs, state, initial_state, spec_params=spec_params)
+                    if obs == "Pair_Creation":
+                        n_e, n_p = value
+                        observables_data[f"{obs}_electron"].append(n_e)
+                        observables_data[f"{obs}_positron"].append(n_p)
+                        observables_data[f"{obs}_balance"].append(n_e - n_p)
+                    else:
+                        observables_data[obs].append(value)
 
-            # Evolve state
-            if self.backend_type == "Aer":
-                state = Statevector(states[f"psi_{t+1}"])
-            else:
-                # Evolve state directly (no Aer backend)
-                if evolution_method == "MatrixExponential":
-                    state_data = expm_multiply(-1j * sparse_ham * step, state_data)
-                    state = Statevector(state_data)
+                # Evolve state
+                if self.backend_type == "Aer":
+                    state = Statevector(states[f"psi_{t+1}"])
                 else:
-                    # Default: use gate evolution (slower but exact)
-                    state = state.evolve(evolution_gate)
+                    # Evolve state directly (no Aer backend)
+                    if evolution_method == "MatrixExponential":
+                        state_data = expm_multiply(-1j * sparse_ham * step, state_data)
+                        state = Statevector(state_data)
+                    else:
+                        # Default: use gate evolution (slower but exact)
+                        state = state.evolve(evolution_gate)
 
         time_array = np.linspace(0, total_time, time_steps)
         observables_dataframe = pd.DataFrame.from_records(observables_data, index=time_array)

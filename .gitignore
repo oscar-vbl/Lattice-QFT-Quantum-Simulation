@@ -1,7 +1,7 @@
 QuantumSimulation/simpleSimulationZZZ.py
 test.txt
 *.pyc
-___pycache__/
+__pycache__/
 .vscode/
 .venv/
 .ipynb_checkpoints/

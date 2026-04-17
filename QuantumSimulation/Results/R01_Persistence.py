@@ -180,7 +180,7 @@ if __name__ == "__main__":
         # Use evoltion data and cut off times to plot persistence vs time with different regimes
         cut_off_times = fit_results_df.loc[best_qubit_num, "Cut_Off_Times"]
         plot_params = parseDictToPlot(
-            {**config["Hamiltonian"]["Parameters"], **config["Temporal Evolution"]["Quench"]["Parameters_to_Change"]},
+            {**qubits_num_config["Hamiltonian"]["Parameters"], **qubits_num_config["Temporal Evolution"]["Quench"]["Parameters_to_Change"]},
             remove_keys=[],
             rename_keys={"e0": "$\\varepsilon_0$"})
         fig, ax = plot_persistenece_vs_time_regimes(evolution_data, cut_off_times, plot_params)

@@ -39,7 +39,7 @@
         "Quench": {
             "Active": true,
             "Parameters_to_Change": {
-                "e0": 0.6
+                "e0": 0.5
             }
         },
         "Evolution_Gate": {
