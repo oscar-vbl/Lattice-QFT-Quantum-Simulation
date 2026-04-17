@@ -48,7 +48,7 @@ Where:
 
 In the strong-field regime ($eE \gg m^2$), the exponential decay rate of vacuum persistence is:
 
-$$\Gamma = \int dE \, \mathcal{P}(E) \cdot \frac{eE}{2\pi} \exp\left(-\frac{\pi m^2}{eE}\right)$$
+$$\Gamma = \int dE \ \mathcal{P}(E), \ \mathcal{P}(E) = \frac{eE}{2\pi} \exp\left(-\frac{\pi m^2}{eE}\right)$$
 
 This non-perturbative formula predicts exponential suppression of the ground state after external field application—the **Schwinger effect**.
 
