@@ -97,8 +97,18 @@ def test_vacuum_persistence_shift():
 
 if __name__ == "__main__":
     test_hamiltonian_hermiticity()
+    print("test_hamiltonian_hermiticity passed.")
+
     test_charge_symmetry()
+    print("test_charge_symmetry passed.")
+
     test_gauss_operator_definition()
+    print("test_gauss_operator_definition passed.")
+
     test_eigenvalue_spectrum()
+    print("test_eigenvalue_spectrum passed.")
+    
     test_vacuum_persistence_shift()
+    print("test_vacuum_persistence_shift passed.")
+
     print("\n✓ All tests passed!")

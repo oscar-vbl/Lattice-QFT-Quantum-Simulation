@@ -94,6 +94,35 @@ def buildChargeOperator(L):
         pauli_terms.append(("I", [], staggered_coeff))
     return SparsePauliOp.from_sparse_list(pauli_terms, num_qubits=L).simplify()
 
+def buildPairCreationOperators(num_qubits: int):
+    """
+    Global observables for counting created pairs.
+    Number of electrons: N_e = sum_{n even} (1 - n_occ(n)) = sum_{n even} (1 - (1 + Z_n)/2) = sum_{n even} (0.5 - 0.5 * Z_n)
+    Number of positrons: N_p = sum_{n odd} n_occ(n) = sum_{n odd} (1 + Z_n)/2 = sum_{n odd} (0.5 + 0.5 * Z_n)
+    Returns two SparsePauliOp: (op_electrons, op_positrons)
+    """
+    ne_paulis = []
+    np_paulis = []
+    
+    for n in range(num_qubits):
+        # Occupation number: n_occ = (1 + <Z>) / 2
+        if n % 2 == 0: # Electrons (Even sites)
+            # Electron site with charge (n_occ - 1)
+            # Electrons created are the loss of occupation, so the number of electrons created is 1 - n_occ
+            ne_paulis.append(("I", [], 0.5))     # 0.5 * I
+            ne_paulis.append(("Z", [n], -0.5))   # -0.5 * Z_n
+        else: # Positrons (Odd sites)
+            # Positron site with charge n_occ
+            # Positrons created are the increase of occupation, so the number of positrons created is n_occ
+            np_paulis.append(("I", [], 0.5))     # 0.5 * I
+            np_paulis.append(("Z", [n], 0.5))    # +0.5 * Z_n
+            
+    # Create SparsePauliOp for electrons and positrons and simplify
+    op_ne = SparsePauliOp.from_sparse_list(ne_paulis, num_qubits=num_qubits).simplify()
+    op_np = SparsePauliOp.from_sparse_list(np_paulis, num_qubits=num_qubits).simplify()
+    
+    return op_ne, op_np
+
 def numberOperator_i(i, L):
     '''
     Build the number operator n_i = (1 + Z_i)/2 for site i in a lattice of size L.

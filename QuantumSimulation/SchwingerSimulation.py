@@ -15,10 +15,9 @@ from qiskit.providers.fake_provider import GenericBackendV2
 from qiskit.circuit.library import efficient_su2, n_local, excitation_preserving
 from qiskit.circuit.library.pauli_evolution import PauliEvolutionGate
 from qiskit.synthesis import SuzukiTrotter
+from qiskit.primitives import BaseEstimatorV2, BaseSamplerV2, StatevectorEstimator, StatevectorSampler
 from qiskit_aer import AerSimulator
-from qiskit_aer.library import save_statevector
-from qiskit import transpile
-#from qiskit.circuit.library import EfficientSU2 # Old qiskit version
+from qiskit_aer.primitives import EstimatorV2, SamplerV2
 from scipy.optimize import minimize
 from scipy.sparse.linalg import expm_multiply
 
@@ -61,10 +60,14 @@ class SchwingerSimulation:
         
         print("\n" + "#" * 70)
         print(f"{getTimer()} INFO: Initializing SchwingerSimulation class.")
-        self.config     = simulation_config
-        self.qubits_num = self.config["QubitsNumber"]
-        self.backend    = self.get_backend()
+        # Configuration parameters
+        self.config        = simulation_config
+        # Number of qubits
+        self.qubits_num    = self.config["QubitsNumber"]
+        # Initial state (if given, it will be used instead of optimizing for the vacuum state)
         self.initial_state = initial_state
+        # Get sampler and estimator based on backend configuration if provided
+        self.estimator, self.sampler  = self.get_backend()
 
     def run_simulation(self):
 
@@ -100,7 +103,7 @@ class SchwingerSimulation:
         if self.initial_state is None:
             self.initial_state, self.vacuum_energy, self.vacuum_parameters = self.get_vacuum()
         else:
-            self.vacuum_energy     = calculateEnergy(Statevector(self.initial_state), self.hamiltonian_prep)
+            self.vacuum_energy     = calculateEnergy(self.initial_state, self.hamiltonian_prep, self.estimator, self.precision)
             self.vacuum_parameters = None
 
         print(f"{getTimer()} INFO: Initial energy = {self.vacuum_energy}")
@@ -133,21 +136,47 @@ class SchwingerSimulation:
         print("#" * 70 + "\n")
 
     def get_backend(self):
-        backend_config  = self.config.get("Backend")
+        backend_config  = self.config.get("Backend", {})
         if backend_config:
             self.backend_type = backend_config.get("Type", "Aer")
             backend_options   = backend_config.get("Options", {})
         else:
             self.backend_type = None
+
+        self.precision = backend_options.get("Precision", None)
+
+        # Define estimator based on backend type
         if self.backend_type is None:
-            print(f"{getTimer()} INFO: No backend specified, statevector is going to evolve with direct matrix gates multiplication.")
-            return None
-        elif self.backend_type == "Aer":
-            print(f"{getTimer()} INFO: Using backend type {self.backend_type} with options {backend_options}")
-            return AerSimulator(**backend_options)
+            print(f"{getTimer()} INFO: No backend specified, state is going to evolve with direct matrix gates multiplication.")
+            self.estimator = None
+            self.sampler   = None
+            return None, None
+
+        elif self.backend_type == "StatevectorEstimator":
+            print(f"{getTimer()} INFO: Using StatevectorEstimator (Ideal V2 Primitive).")
+            self.estimator = StatevectorEstimator()
+            self.sampler   = StatevectorSampler()
+            return self.estimator, self.sampler
+            
+        elif self.backend_type == "Aer" or self.backend_type == "AerSimulator":
+            
+            print(f"{getTimer()} INFO: Using EstimatorV2 backed by AerSimulator with options {backend_options}")
+            
+            # Aer backend instance with options (e.g. shots, noise model, etc.) defined in the configuration. This backend will be used internally by the EstimatorV2.
+            aer_backend = AerSimulator(**backend_options)
+            
+            # EstimatorV2 and SamplerV2 instance using the AerSimulator as backend.
+            shots = backend_options.get("shots", 1024)
+            self.estimator = EstimatorV2(backend=aer_backend, options={"default_shots": shots})
+            self.sampler   = SamplerV2(backend=aer_backend, options={"default_shots": shots}) # Crea el sampler
+            
+            return self.estimator, self.sampler
+        
         else:
-            print(f"{getTimer()} WARNING: Backend type {self.backend_type} not implemented, statevector is going to evolve with direct matrix gates multiplication.")
-            return None
+            print(f"{getTimer()} WARNING: Backend type {self.backend_type} not implemented, reverting to direct matrix multiplication.")
+            self.estimator = None
+            self.sampler   = None
+            return None, None
 
     def get_hamiltonian(self,
                         override_params: dict | None =None):
@@ -238,7 +267,6 @@ class SchwingerSimulation:
             "num_qubits": self.qubits_num,
             "entanglement": self.config["Ansatz"].get("Entanglement", "linear"),
             "reps": self.config["Ansatz"].get("Reps", 3),
-            #"initial_state": initial_circuit, # Old qiskit version
             **self.config["Ansatz"].get("AdditionalParams", {})
         }
         ansatz = func_return(ansatz_func, ansatz_params)
@@ -320,7 +348,7 @@ class SchwingerSimulation:
             except: pass
 
         max_iter = final_options.get('maxiter', 2000)        
-        with tqdm(total=max_iter, desc="VQE Optimization", unit="iter", ncols=80, file=sys.stdout, leave=True, dynamic_ncols=False) as pbar:
+        with tqdm(total=max_iter, desc="VQE Optimization", unit="iter", file=sys.stdout, leave=True, dynamic_ncols=False) as pbar:
             result = minimize(self.energy_cost_function, initial_state_params, **minimize_params,
                             callback=callback)
             # Update bar to show actual iterations
@@ -346,12 +374,16 @@ class SchwingerSimulation:
 
     def energy_cost_function(self, params: Mapping | Iterable):
         '''
-        Cost funcion to minimize energy of the statevector
+        Cost funcion to minimize energy of the state
         obtained by the ansatz with given parameters,
-        given self.hamiltonian and self.ansatz.
+        given self.hamiltonian_prep and self.ansatz.
         '''
-        state = Statevector(self.ansatz.assign_parameters(params))
-        return state.expectation_value(self.hamiltonian_prep).real
+        ansatz_circuit = self.ansatz.assign_parameters(params)
+        return calculateEnergy(
+            ansatz_circuit, self.hamiltonian_prep,
+            getattr(self, 'estimator', None),
+            getattr(self, 'precision', None)
+        )
     
     def evolve_state(self):
         '''
@@ -419,8 +451,12 @@ class SchwingerSimulation:
         evolution_gate = gate(self.hamiltonian_evol, time=step, synthesis=synthesis(**synthesis_params))
         
         # Define initial state
-        state = Statevector.from_instruction(self.initial_state)
-        initial_state = state.copy()
+        if self.estimator is None:
+            state = Statevector.from_instruction(self.initial_state)
+            initial_state = state.copy()
+        else:
+            state = self.initial_state.copy()
+            initial_state = state.copy()
         
         # Define evolution method for null backend
         evolution_method = evolution_params.get("Evolution_Method", "MatrixExponential")
@@ -429,29 +465,6 @@ class SchwingerSimulation:
         if evolution_method == "MatrixExponential":
             sparse_ham = self.hamiltonian_evol.to_matrix(sparse=True)
             state_data = initial_state.data.copy()
-
-        # Define evolution circuit according to backend
-        if self.backend_type == "Aer":
-            # Build circuit for evolution
-            evolution_circuit = QuantumCircuit(self.qubits_num)
-            evolution_circuit.initialize(initial_state.data, range(self.qubits_num))
-            # guardar estado t=0
-            evolution_circuit.append(save_statevector(label=f"psi_0"), range(self.qubits_num))
-            for t in range(time_steps):
-                evolution_circuit.append(evolution_gate, range(self.qubits_num))
-                evolution_circuit.append(save_statevector(label=f"psi_{t+1}"), range(self.qubits_num))
-
-            compiled_circuit = transpile(evolution_circuit, backend=self.backend)
-
-            # Simulate circuit
-            result = self.backend.run(compiled_circuit).result()
-            data = result.data()
-            states = {}
-            for t in range(time_steps + 1):
-                states[f"psi_{t}"] = data[f"psi_{t}"]
-        else:
-            # No evolution circuit needed, state is evolved directly with evolution gate or matrix exponential
-            states = {}  # Dummy variable for consistency
 
         observables        = evolution_params.get("Observables", {})
         observables_list   = observables.get("Observables_List", [])
@@ -464,11 +477,11 @@ class SchwingerSimulation:
             del observables_data["Pair_Creation"]
 
         # Iterate over time steps
-        with tqdm(range(time_steps), desc="Evolving state", unit="step", ncols=80, file=sys.stdout, leave=True, dynamic_ncols=False) as pbar:
+        with tqdm(range(time_steps), desc="Evolving state", unit="step", file=sys.stdout, leave=True, dynamic_ncols=False) as pbar:
             for t in pbar:
                 for obs in observables_list:
                     spec_params = observables_params.get(obs, None)
-                    value = self.calculate_observable(obs, state, initial_state, spec_params=spec_params)
+                    value = self.calculate_observable(obs, state, initial_state, spec_params=spec_params, estimator=self.estimator, precision=self.precision)
                     if obs == "Pair_Creation":
                         n_e, n_p = value
                         observables_data[f"{obs}_electron"].append(n_e)
@@ -478,9 +491,7 @@ class SchwingerSimulation:
                         observables_data[obs].append(value)
 
                 # Evolve state
-                if self.backend_type == "Aer":
-                    state = Statevector(states[f"psi_{t+1}"])
-                else:
+                if self.estimator is None:
                     # Evolve state directly (no Aer backend)
                     if evolution_method == "MatrixExponential":
                         state_data = expm_multiply(-1j * sparse_ham * step, state_data)
@@ -488,6 +499,8 @@ class SchwingerSimulation:
                     else:
                         # Default: use gate evolution (slower but exact)
                         state = state.evolve(evolution_gate)
+                else:
+                    state.append(evolution_gate, range(self.qubits_num))
 
         time_array = np.linspace(0, total_time, time_steps)
         observables_dataframe = pd.DataFrame.from_records(observables_data, index=time_array)
@@ -496,9 +509,12 @@ class SchwingerSimulation:
         return state, observables_dataframe
     
     def calculate_observable(self, observable: str,
-                             state: Statevector,
+                             state: Statevector | QuantumCircuit,
                              initial_state: Statevector | None = None,
                              spec_params: Mapping | None = None,
+                             estimator: BaseEstimatorV2 | None = None,
+                             sampler: BaseSamplerV2 | None = None,
+                             precision: float | None = None
                              ):
         '''
         Calculate the expectation value of a given observable.
@@ -511,13 +527,13 @@ class SchwingerSimulation:
         '''
         
         if observable == "Energy":
-            value = calculateEnergy(state, self.hamiltonian_evol)
+            value = calculateEnergy(state, self.hamiltonian_evol, estimator, precision)
         elif observable == "Persistence":
-            value = calculateVacuumPersistence(state, initial_state)
+            value = calculateVacuumPersistence(state, initial_state, sampler)
         elif observable == "Gauss_Law_Violation":
-            value = calculateGaussLawViolation(state, self.qubits_num)
+            value = calculateGaussLawViolation(state, self.qubits_num, estimator, precision)
         elif observable == "Pair_Creation":
-            value = calculatePairCreation(state, self.qubits_num)
+            value = calculatePairCreation(state, self.qubits_num, estimator, precision)
         else:
             print(f"{getTimer()} WARNING: Observable {observable} not implemented...")
             value = None

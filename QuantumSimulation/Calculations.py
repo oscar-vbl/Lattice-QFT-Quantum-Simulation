@@ -1,6 +1,8 @@
 from Utils import getTimer
-from Operators import gauss_operator, buildChargeOperatorMinimal
+from Operators import gauss_operator, buildChargeOperatorMinimal, buildPairCreationOperators
 from qiskit.quantum_info import SparsePauliOp, Statevector
+from qiskit.circuit.quantumcircuit import QuantumCircuit
+from qiskit.primitives import BaseEstimatorV2, BaseSamplerV2
 import numpy as np
 
 def checkChargeSymmetry(H, e0=0):
@@ -38,51 +40,116 @@ def checkChargeSymmetry(H, e0=0):
         print(f"{getTimer()} WARNING: Hamiltonian does not respect charge symmetry.")
         return False, Q_op
 
-def calculateEnergy(state: Statevector, hamiltonian: SparsePauliOp):
+def calculateOperatorExpectation(
+        state: Statevector | QuantumCircuit,
+        operator: SparsePauliOp,
+        estimator: BaseEstimatorV2 | None = None,
+        precision: float | None = None) -> float:
+    '''
+    Calculate the expectation value of an operator for a given state.
+
+    '''
+    if estimator is None:
+        if isinstance(state, QuantumCircuit):
+            state = Statevector(state)        
+        return float(state.expectation_value(operator).real)
+    else:
+        if isinstance(state, Statevector):
+            raise TypeError("Estimator provided but state is already a Statevector. If estimator is provided, state must be a QuantumCircuit.")
+        if precision is not None:
+            pub = [(state, operator, [], precision)]
+        else:
+            pub = [(state, operator)]
+        job = estimator.run(pub)
+        result = job.result()[0]
+        return float(np.squeeze(result.data.evs).real)
+
+def calculateEnergy(
+        state: Statevector | QuantumCircuit,
+        hamiltonian: SparsePauliOp,
+        estimator: BaseEstimatorV2 | None = None,
+        precision: float | None = None
+    ) -> float:
     '''
     Calculate energy as the expectation value of the Hamiltonian for a given state.
 
     '''
-    return state.expectation_value(hamiltonian).real
+    return calculateOperatorExpectation(state, hamiltonian, estimator, precision)
 
-def calculateVacuumPersistence(state: Statevector, initial_state: Statevector) -> np.floating | None:
+def calculateVacuumPersistence(
+        state: Statevector | QuantumCircuit,
+        initial_state: Statevector | QuantumCircuit,
+        sampler: BaseSamplerV2 | None = None
+    ) -> np.floating | None:
     '''
     Calculate vacuum persistence as the fidelity of a given state and the initial vacuum state
     '''
-    if initial_state is None:
-        print(f"{getTimer()} WARNING: Initial state must be provided to calculate Persistence.")
-        return None
+    if sampler is None:
+        if isinstance(state, QuantumCircuit):
+            state = Statevector(state)
+        if isinstance(initial_state, QuantumCircuit):
+            initial_state = Statevector(initial_state)
+        return float(np.abs(state.inner(initial_state)) ** 2)
     else:
-        return np.abs(state.inner(initial_state)) ** 2
+        # Hardware method (Compute-Uncompute)
+        # state contains preparation ansatz + Trotter evolution
+        assert isinstance(state, QuantumCircuit),         "State must be a QuantumCircuit when using sampler."
+        assert isinstance(initial_state, QuantumCircuit), "Initial state must be a QuantumCircuit when using sampler."
+        # New circuit for measurement
+        measure_circuit = state.copy()
 
-def calculateGaussLawViolation(state: Statevector, qubits_num: int):
+        # Undo initial state preparation (we apply ansatz inverse)
+        # initial_state_circuit es el circuito que preparó el vacío
+        measure_circuit.compose(initial_state.inverse(), inplace=True)
+
+        # Measure all qubits at the end
+        measure_circuit.measure_all()
+
+        # Send to Sampler
+        job = sampler.run([measure_circuit])
+        result = job.result()[0]
+
+        # Counts (shots) of the measurement results at the end
+        counts = result.data.meas.get_counts()
+
+        # Persistence is the probability of measuring the all-zeros state, which corresponds to the initial vacuum state after undoing the preparation.
+        # So we take the count of the all-zeros state and divide by total shots.
+        # If we are at initial state, we would get
+        # |00...0> -> Circuit|00...0> -> Circuit^-1 Circuit|00...0> -> |00...0>
+        # so we would expect to measure all-zeros with probability 1, which means persistence = 1 at t=0, as expected.
+        total_shots = sum(counts.values())
+        zeros_state = '0' * measure_circuit.num_qubits
+
+        persistence = counts.get(zeros_state, 0) / total_shots   
+        return float(persistence)     
+
+def calculateGaussLawViolation(
+        state: Statevector | QuantumCircuit,
+        qubits_num: int,
+        estimator: BaseEstimatorV2 | None = None,
+        precision: float | None = None
+    ) -> float:
     '''
     Check violation of Gauss' law as sum of the expectation value of the Gauss operator G_n of all the sites on the lattice. It should be 0 (or almost).
     '''
     value = 0
     for n in range(qubits_num):
-        value += np.abs(state.expectation_value(gauss_operator(n, qubits_num) @ gauss_operator(n, qubits_num)))
+        op = gauss_operator(n, qubits_num) @ gauss_operator(n, qubits_num)
+        value += np.abs(calculateOperatorExpectation(state, op, estimator, precision))
 
     return value
 
-def calculatePairCreation(state: Statevector, qubits_num: int):
+def calculatePairCreation(
+        state: Statevector | QuantumCircuit,
+        qubits_num: int,
+        estimator: BaseEstimatorV2 | None = None,
+        precision: float | None = None
+    ) -> tuple[float, float]:
     '''
     Calculate the number of pairs created as the sum of the occupation numbers of all sites. The occupation number of a site is calculated as n_occ = (1 + <Z>) / 2, where <Z> is the expectation value of the Z operator on that site. For even sites (electrons) we count the number of electrons created as 1 - n_occ, while for odd sites (positrons) we count the number of positrons created as n_occ.    
     '''
+    n_e_obs, n_p_obs = buildPairCreationOperators(qubits_num)
+    n_e = calculateOperatorExpectation(state, n_e_obs, estimator, precision)
+    n_p = calculateOperatorExpectation(state, n_p_obs, estimator, precision)
     # Number of electrons and positrons
-    n_e, n_p = 0, 0
-    for n in range(qubits_num):
-        obs_z = SparsePauliOp.from_sparse_list([("Z", [n], 1.0)], num_qubits=qubits_num)
-        exp_z = state.expectation_value(obs_z).real
-        # Occupation number: n_occ = (1 + <Z>) / 2
-        n_occ = (1 + exp_z) / 2
-        if n % 2 == 0:
-            # Electron site with charge (n_occ - 1)
-            # Electrons created are the loss of occupation, so the number of electrons created is 1 - n_occ
-            n_e += (1.0 - n_occ)
-        else:
-            # Positron site with charge n_occ
-            # Positrons created are the increase of occupation, so the number of positrons created is n_occ
-            n_p += n_occ
-
     return n_e, n_p

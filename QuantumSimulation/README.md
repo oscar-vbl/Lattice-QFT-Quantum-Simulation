@@ -118,7 +118,7 @@ Script to calculate vacuum persistence related results:
 2. **Best Fit**: Show exponential fit for best $L$ with Schwinger overlay
 3. **Regime Visualization**: Plot persistence marking Zeno/Schwinger/revival boundaries
 4. **Field Dependence**: Scan $e_0$ values, show $\Gamma$ vs background field
-5. (Future) Log-log plot for Schwinger exponential suppression
+5. **Log Field Dependence**: Log-log plot for Schwinger exponential suppression
 
 Output saved to `../data/` and `../plots/`.
 
@@ -189,7 +189,8 @@ tests.test_hamiltonian_structure()
 
 ## Future Extensions
 
-- [ ] TBD
+- [ ] Tensor Networks Architecture
+- [ ] Advanced Physical Results
 
 ## Disclaimer
 
