@@ -510,7 +510,7 @@ class SchwingerSimulation:
     
     def calculate_observable(self, observable: str,
                              state: Statevector | QuantumCircuit,
-                             initial_state: Statevector | None = None,
+                             initial_state: Statevector | QuantumCircuit | None = None,
                              spec_params: Mapping | None = None,
                              estimator: BaseEstimatorV2 | None = None,
                              sampler: BaseSamplerV2 | None = None,

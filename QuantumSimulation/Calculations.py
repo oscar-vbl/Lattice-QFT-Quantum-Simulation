@@ -80,7 +80,7 @@ def calculateVacuumPersistence(
         state: Statevector | QuantumCircuit,
         initial_state: Statevector | QuantumCircuit,
         sampler: BaseSamplerV2 | None = None
-    ) -> np.floating | None:
+    ) -> float:
     '''
     Calculate vacuum persistence as the fidelity of a given state and the initial vacuum state
     '''
