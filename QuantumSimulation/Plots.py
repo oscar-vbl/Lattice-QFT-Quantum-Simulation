@@ -98,14 +98,14 @@ def plot_simulated_vs_analytical(decay_model, persistence, t_values, gamma_simul
             'r--', lw=1.5, label=f'Fit: Γ={gamma_simulada:.3f}')
     ax1.plot(t_values, np.exp(-gamma_analitica * t_values), 
             'k:', lw=1.5, label=f'Schwinger: Γ={gamma_analitica:.3f}')
-    ax1.set_xlabel('Time'); ax1.set_ylabel('$\\Gamma$')
-    ax1.set_title('Vacuum Persistence $\\Gamma$ vs Time'); ax1.legend(); ax1.grid(True, alpha=0.3)
+    ax1.set_xlabel('Time'); ax1.set_ylabel('$G(t)$')
+    ax1.set_title('Vacuum Persistence Amplitude $G(t)$ vs Time'); ax1.legend(); ax1.grid(True, alpha=0.3)
 
     # Right: logarithmic scale
     mask_pos = np.array(persistence) > 1e-4
     ax2.semilogy(t_values[mask_pos], np.array(persistence)[mask_pos], 'b.', ms=4, label='Simulation')
     ax2.semilogy(t_values, np.exp(-gamma_analitica * t_values), 'r--', lw=2, label='Schwinger Prediction')
-    ax2.set_xlabel('Time'); ax2.set_ylabel('$log(\\Gamma)$')
+    ax2.set_xlabel('Time'); ax2.set_ylabel('$log\\left(G(t)\\right)$')
     ax2.set_title('Rate validation (log scale)'); ax2.legend(); ax2.grid(True, which='both', alpha=0.3)
 
     # Verifies that the decay is a pure exponential (not relaxation)
@@ -147,8 +147,8 @@ def plot_persistenece_vs_time_regimes(evolution_data, cut_off_times, params=None
     ax.legend()
     ax.grid(True)
     ax.set_xlabel("Time")
-    ax.set_ylabel("$\\Gamma$")
-    plt.suptitle(f"Vacuum Persistence $\\Gamma$ vs Time and Regimes")
+    ax.set_ylabel("$G(t)$")
+    plt.suptitle(f"Vacuum Persistence Amplitude $G(t)$ vs Time and Regimes")
     if params:
         ax.set_title(f"Parameters: {params}", fontsize=10)
     plt.tight_layout()
