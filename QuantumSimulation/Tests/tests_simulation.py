@@ -8,12 +8,15 @@ sys.path.append(Path(__file__).parent.parent.as_posix())
 from SchwingerSimulation import SchwingerSimulation
 from Calculations import calculateEnergy
 from Calculations import calculateVacuumPersistence
+from Operators import (
+    buildSchwingerHamiltonianTemporalGauge
+)
 
 def test_full_simulation_pipeline_smoke_test():
     """Validates that a full simulation pipeline runs without throwing exceptions."""
     time_steps = 10
     test_config = {
-        "QubitsNumber": 4, # Muy pequeño para que sea instantáneo
+        "QubitsNumber": 4, # Small
         "Hamiltonian": {
             "Type": "Schwinger", "Gauge": "Temporal",
             "Parameters": {"L": 4, "a": 0.5, "m": 0.1, "e0": 0.0}
@@ -57,13 +60,83 @@ def test_full_simulation_pipeline_smoke_test():
     assert len(sim.evolution_data) == time_steps, f"Must have {time_steps} rows (t=0 + {time_steps-1} time steps)."
     assert "Persistence" in sim.evolution_data.columns
 
+def test_full_simulation_ground_state():
+    """Validates that a full simulation pipeline runs without throwing exceptions,
+    and compares the overlap of the simulated and numerical ground state."""
+    time_steps = 10
+    L, a, m, e0 = 4, 0.5, 1.0, 0.0
+
+    test_config = {
+        "QubitsNumber": L,
+        "Hamiltonian": {
+            "Type": "Schwinger", "Gauge": "Temporal",
+            "Parameters": {"L": L, "a": a, "m": m, "e0": e0}
+        },
+        "Backend": {"Type": "StatevectorEstimator"},
+        "Ansatz": {
+            "Type": "HVA",
+            "Entanglement": "linear",
+            "Reps": 4,
+            "Initial State": {
+                "Vacuum": True,
+                "Staggered": True
+            },
+            "Init_Strategy": "random_small",
+            "Minimizer": {
+                "Method": "L-BFGS-B",
+                "Options": {
+                    "maxiter": 10000,
+                    "ftol": 1e-5
+                }
+            },
+            "Ensure_Zero_Charge": True
+        },
+        "Temporal Evolution": {
+            "Active": True,
+            "Time_Steps": time_steps,
+            "Total_Time": 10,
+            "Quench": {
+                "Active": True,
+                "Parameters_to_Change": {
+                    "e0": 0.5
+                }
+            },
+            "Evolution_Gate": {
+                "Type": "Pauli",
+                "Synthesis": "TrotterSuzuki",
+                "Synthesis_Params": {"order": 2}
+            },
+            "Evolution_Method": "MatrixExponential",
+            "Observables": {
+                "Observables_List": ["Energy", "Persistence", "Pair_Creation"],
+                "Observables_Params": {
+                    "Energy": {},
+                    "Persistence": {}
+                }
+            }
+        }
+    }
+    
+    sim = SchwingerSimulation(test_config)
+    sim.run_simulation()
+
+    sim_gs = Statevector(sim.initial_state).data
+    sim_energy = sim.vacuum_energy
+        
+    # Check ground state is almost the same as calculated numerically from H matrix
+    H = buildSchwingerHamiltonianTemporalGauge(L, a, m, e0)
+    eigvals, eigvecs = np.linalg.eigh(H.to_matrix())
+    num_gs = eigvecs[:, 0]
+    num_energy = eigvals[0]
+    assert np.linalg.norm(np.vdot(sim_gs, num_gs)) ** 2 > 0.9,    "Overlap with numerical state is less than 0.9."
+    assert np.abs((sim_energy - num_energy) / num_energy) < 0.01, "Energy deviation is higher than 1%."
 
 def test_estimator_v2_parity():
-    """Assert EstimatorV2 and Statevector dan el mismo valor esperado."""
+    """Assert EstimatorV2 and Statevector gives the same result."""
     # 1. Prepare simple circuit and observable
     qc = QuantumCircuit(2)
     qc.h(0)
-    qc.cx(0, 1) # Estado de Bell
+    qc.cx(0, 1) # Bell state
     
     observable = SparsePauliOp.from_list([("ZZ", 1.0), ("XX", 0.5)])
     
@@ -101,6 +174,9 @@ def test_sampler_vacuum_persistence():
 if __name__ == "__main__":
     test_full_simulation_pipeline_smoke_test()
     print("test_full_simulation_pipeline_smoke_test passed.")
+    
+    test_full_simulation_ground_state()
+    print("test_full_simulation_ground_state passed.")
     
     test_estimator_v2_parity()
     print("test_estimator_v2_parity passed.")

@@ -4,6 +4,7 @@ import json
 from qiskit import qpy
 import pandas as pd
 from typing import Callable, Mapping, Any, Iterable
+import pickle
 
 from _config import PROJECT_ROOT, MODULES_ROOT, CONFIGS_FOLDER, PLOTS_FOLDER, DATA_FOLDER
 
@@ -51,8 +52,11 @@ def load_data(folderName, fileName, rootPath=None, indexSet=None):
         data = pd.read_csv(data_path)
         if indexSet: data.set_index(indexSet, inplace=True)
     elif fileName.endswith(".qpy"):
+        with open(data_path, "rb") as handle:
+           data = qpy.load(handle)[0]
+    elif fileName.endswith(".pkl"):
          with open(data_path, "rb") as handle:
-            data = qpy.load(handle)[0]
+            data = pickle.load(handle)
     else:
         raise ValueError(f"Unsupported file format: {os.path.splitext(fileName)[1]}")
     return data
@@ -69,6 +73,9 @@ def save_data(data, folderName, fileName, rootPath=None, overWrite=True, **kwarg
     elif fileName.endswith(".qpy"):
         with open(data_path, "wb") as file:
             qpy.dump(data, file)
+    elif fileName.endswith(".pkl"):
+        with open(data_path, "wb") as file:
+            pickle.dump(data, file)
     elif fileName.endswith(".png") or \
             fileName.endswith(".jpg") or \
             fileName.endswith(".jpeg") or \

@@ -3,13 +3,15 @@
 import sys
 import numpy as np
 import pandas as pd
+import time
 from typing import Callable, Any, Mapping, Iterable
 from tqdm.auto import tqdm
 from qiskit.circuit.quantumcircuit import QuantumCircuit
 from circuitBuilder import buildCircuit, addGate
 from Operators import buildSchwingerHamiltonianTemporalGauge
 from Utils import getTimer, func_return
-from Calculations import calculateEnergy, calculateVacuumPersistence, calculateGaussLawViolation, checkChargeSymmetry, calculatePairCreation
+from Calculations import calculateEnergy, calculateVacuumPersistence, calculateGaussLawViolation, checkChargeSymmetry, calculatePairCreation, calculateElectricField
+from Ansatzes import build_schwinger_hva, build_schwinger_hva_full, build_schwinger_hva_balanced
 from qiskit.quantum_info import SparsePauliOp, Statevector
 from qiskit.providers.fake_provider import GenericBackendV2
 from qiskit.circuit.library import efficient_su2, n_local, excitation_preserving
@@ -18,6 +20,7 @@ from qiskit.synthesis import SuzukiTrotter
 from qiskit.primitives import BaseEstimatorV2, BaseSamplerV2, StatevectorEstimator, StatevectorSampler
 from qiskit_aer import AerSimulator
 from qiskit_aer.primitives import EstimatorV2, SamplerV2
+from qiskit_algorithms.gradients import ParamShiftEstimatorGradient
 from scipy.optimize import minimize
 from scipy.sparse.linalg import expm_multiply
 
@@ -259,6 +262,33 @@ class SchwingerSimulation:
             ansatz_func = excitation_preserving
         elif ansatz_type == "TwoLocal":
             ansatz_func = n_local
+        elif ansatz_type == "HVA":
+            ansatz_func = build_schwinger_hva_balanced
+            if self.config["Ansatz"].get("AdditionalParams", {}):
+                self.config["Ansatz"]["AdditionalParams"] = {
+                    **self.config["Ansatz"]["AdditionalParams"],
+                    **{"hamiltonian": self.hamiltonian_prep}
+                }
+            else:
+                self.config["Ansatz"]["AdditionalParams"] = {"hamiltonian": self.hamiltonian_prep}
+        elif ansatz_type == "HVA Full":
+            ansatz_func = build_schwinger_hva_full
+            if self.config["Ansatz"].get("AdditionalParams", {}):
+                self.config["Ansatz"]["AdditionalParams"] = {
+                    **self.config["Ansatz"]["AdditionalParams"],
+                    **{"hamiltonian": self.hamiltonian_prep}
+                }
+            else:
+                self.config["Ansatz"]["AdditionalParams"] = {"hamiltonian": self.hamiltonian_prep}
+        elif ansatz_type == "HVA Simple":
+            ansatz_func = build_schwinger_hva
+            if self.config["Ansatz"].get("AdditionalParams", {}):
+                self.config["Ansatz"]["AdditionalParams"] = {
+                    **self.config["Ansatz"]["AdditionalParams"],
+                    **{"hamiltonian": self.hamiltonian_prep}
+                }
+            else:
+                self.config["Ansatz"]["AdditionalParams"] = {"hamiltonian": self.hamiltonian_prep}
         else:
             print(f"{getTimer()} WARNING: Ansatz type {ansatz_type} not implemented...")
             return None
@@ -266,9 +296,16 @@ class SchwingerSimulation:
         ansatz_params = {
             "num_qubits": self.qubits_num,
             "entanglement": self.config["Ansatz"].get("Entanglement", "linear"),
-            "reps": self.config["Ansatz"].get("Reps", 3),
+            "reps": self.config["Ansatz"].get("Reps", 3)
+        }
+
+        print(f"{getTimer()} INFO: Using ansatz {ansatz_type} with parameters: {ansatz_params}")
+
+        ansatz_params = {
+            **ansatz_params,
             **self.config["Ansatz"].get("AdditionalParams", {})
         }
+
         ansatz = func_return(ansatz_func, ansatz_params)
         assert isinstance(ansatz, QuantumCircuit), f"WARNING: Ansatz function did not return a QuantumCircuit, review ansatz parameters..."
         if ansatz is not None:
@@ -301,12 +338,16 @@ class SchwingerSimulation:
 
         initial_state_params = self.config["Ansatz"].get("Initial Parameters", None)
         if not initial_state_params:
-            np.random.seed(42)
+            #np.random.seed(42)
             # IMPROVED: Better parameter initialization (near identity instead of uniform random)
             init_strategy = self.config["Ansatz"].get("Init_Strategy", "random_small")
+            init_max      = self.config["Ansatz"].get("Init_Max", 0.1)
             if init_strategy == "random_small":
                 # Start near identity: better convergence for VQE
-                initial_state_params = np.random.normal(0, 0.1, self.ansatz.num_parameters)
+                initial_state_params = np.random.normal(0, init_max, self.ansatz.num_parameters)
+            elif init_strategy == "zeros":
+                # Start near identity: better convergence for VQE
+                initial_state_params = np.zeros(self.ansatz.num_parameters)
             elif init_strategy == "uniform_random":
                 # Original uniform random
                 initial_state_params = np.random.random(self.ansatz.num_parameters) * 2 * np.pi
@@ -333,12 +374,17 @@ class SchwingerSimulation:
             **self.config["Ansatz"]["Minimizer"].get("AdditionalParams", {})
         }
 
+        if self.config["Ansatz"].get("Use Gradient Cost", False):
+            if hasattr(self, "estimator"): self.gradient_estimator = self.estimator
+            else:                          self.gradient_estimator = StatevectorEstimator()
+            minimize_params["jac"] = self.gradient_cost_function
+            print(f"{getTimer()} INFO: Analytic gradient (ParamShift) enabled.")
+
         print(f"{getTimer()} INFO: Minimization config: method={minimize_params['method']}, maxiter={final_options['maxiter']}")
         print(f"{getTimer()} INFO: Initial parameters strategy: {init_strategy}")
         
         # IMPROVED: Track optimization history for diagnostics
         self.optimization_history = []
-        iteration_count = [0]  # Use list to modify in nested function
 
         def callback(xk):
             energy = self.energy_cost_function(xk)
@@ -348,6 +394,7 @@ class SchwingerSimulation:
             except: pass
 
         max_iter = final_options.get('maxiter', 2000)        
+        vqe_start = time.time()
         with tqdm(total=max_iter, desc="VQE Optimization", unit="iter", file=sys.stdout, leave=True, dynamic_ncols=False) as pbar:
             result = minimize(self.energy_cost_function, initial_state_params, **minimize_params,
                             callback=callback)
@@ -356,6 +403,8 @@ class SchwingerSimulation:
                 pbar.total = result.nit
                 pbar.n = result.nit
                 pbar.refresh()
+
+        self.vqe_duration = time.time() - vqe_start
 
         vacuum_parameters = result.x
         vacuum_state      = self.ansatz.assign_parameters(vacuum_parameters)
@@ -384,6 +433,18 @@ class SchwingerSimulation:
             getattr(self, 'estimator', None),
             getattr(self, 'precision', None)
         )
+    
+    def gradient_cost_function(self, params: Mapping | Iterable):
+        '''
+        Calculate analytical gradient using Parameter Shift Rule.
+        '''
+        # Gradient calculator initialization
+        gradient = ParamShiftEstimatorGradient(estimator=self.gradient_estimator)
+        
+        # Run job
+        job = gradient.run([self.ansatz], [self.hamiltonian_prep], [params])
+        
+        return np.array(job.result().gradients[0])    
     
     def evolve_state(self):
         '''
@@ -444,9 +505,11 @@ class SchwingerSimulation:
             quench_params = quench_config.get("Parameters_to_Change", {})
             print(f"{getTimer()} INFO: Applying Quench with parameters: {quench_params}")
             self.hamiltonian_evol = self.get_hamiltonian(override_params=quench_params)
+            self.e0 = quench_params.get("e0", self.config["Hamiltonian"]["Parameters"].get("e0", 0))
         else:
             print(f"{getTimer()} INFO: No Quench parameters, evolving with base hamiltonian.")
             self.hamiltonian_evol = self.hamiltonian_prep
+            self.e0 = self.config["Hamiltonian"]["Parameters"].get("e0", 0)
         
         evolution_gate = gate(self.hamiltonian_evol, time=step, synthesis=synthesis(**synthesis_params))
         
@@ -534,6 +597,8 @@ class SchwingerSimulation:
             value = calculateGaussLawViolation(state, self.qubits_num, estimator, precision)
         elif observable == "Pair_Creation":
             value = calculatePairCreation(state, self.qubits_num, estimator, precision)
+        elif observable == "Electric_Field":
+            value = calculateElectricField(state, self.qubits_num, self.e0, estimator, precision)
         else:
             print(f"{getTimer()} WARNING: Observable {observable} not implemented...")
             value = None
