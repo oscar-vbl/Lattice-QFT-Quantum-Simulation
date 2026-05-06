@@ -3,8 +3,7 @@
 Basic validation results of the architecture
 '''
 import os
-# ⚠️ CRUCIAL: Obliga a Numpy/Qiskit a usar 1 solo hilo por proceso.
-# Pon esto en las primeras líneas de tu script, ANTES de importar Qiskit o Scipy.
+# Use one thread per process
 os.environ['OMP_NUM_THREADS'] = '1'
 os.environ['OPENBLAS_NUM_THREADS'] = '1'
 os.environ['MKL_NUM_THREADS'] = '1'
