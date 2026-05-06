@@ -147,5 +147,5 @@ def addGate(
                 circuit.add_register(ClassicalRegister(len(circuit.qubits)))
     # Add other gates as needed
     else:
-        raise print(f"ERROR: Unsupported gate type: {gateType}")
+        print(f"ERROR: Unsupported gate type: {gateType}")
     

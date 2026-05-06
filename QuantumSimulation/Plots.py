@@ -2,6 +2,7 @@ import matplotlib.pyplot as plt
 import numpy as np
 from scipy.optimize import curve_fit
 from Utils import getTimer
+from qiskit.circuit import QuantumCircuit, Parameter
 
 def simplePlot(x, y, title="", xlabel="", ylabel="", savePath=None):
     '''
@@ -220,3 +221,264 @@ def plot_gamma_vs_electricField(gamma_simulated, e0_values, field_values,
             fontsize=10, ha='center', va='top')
 
     return fig, axes, fit_params
+
+def plot_simple_hva_circuit(reps=1):
+    qc = QuantumCircuit(4)
+    
+    for rep in range(reps):
+        theta_Z = Parameter(rf"$\theta_Z^{{{rep}}}$")
+        theta_E = Parameter(rf"$\theta_E^{{{rep}}}$")
+        theta_O = Parameter(rf"$\theta_O^{{{rep}}}$")        
+        # 1. Theta_Z Layer (Mass and Electric Field)
+        for i in range(4):
+            qc.rz(theta_Z, i) # Mass
+        for i in range(3):
+            qc.rzz(theta_Z, i, i+1) # ZZ Electric Field
+            
+        qc.barrier()
+        
+        # 2. Theta_E Even Hopping Layer
+        for i in [0, 2]:
+            qc.rxx(theta_E, i, i+1)
+            qc.ryy(theta_E, i, i+1)
+            
+        qc.barrier()
+        
+        # 3. Theta_O Odd Hopping Layer
+        for i in [1]:
+            qc.rxx(theta_O, i, i+1)
+            qc.ryy(theta_O, i, i+1)
+            
+        qc.barrier()
+
+    return qc
+
+
+def plot_validation_ansatzes(qubits_nums,
+                             ansatz_comparison,
+                             dither = 0.1,
+                             x_label= 'System Size (L)'):
+    '''
+    Figures: 00_02_Overlap_Vs_Reps_Errors and 00_03_Overlap_Vs_Qubits_Errors
+    '''
+    # ==========================================
+    # PLOT CONFIG
+    # ==========================================
+    # Academic style
+    plt.rcParams.update({
+            "font.family": "serif",
+            "axes.labelsize": 12,
+            "font.size": 10,
+            "legend.fontsize": 10,
+            "xtick.labelsize": 10,
+            "ytick.labelsize": 10
+        })
+
+    fig, (ax1, ax2) = plt.subplots(1, 2, figsize=(12, 5))
+
+    # --- Plot 1: Infidelity ---
+    ax1.set_yscale('log')
+    ax1.set_xlabel(x_label)
+    ax1.set_ylabel(r'State Infidelity $(1 - |\langle \psi_{exact} | \psi_{VQE} \rangle|^2)$')
+    ax1.set_title('Ansatz Expressibility (Vacuum State)')
+    ax1.set_xticks(qubits_nums)
+    ax1.grid(True, which="both", ls="--", alpha=0.4)
+
+    # --- Plot 2: Relative energy error ---
+    ax2.set_yscale('log')
+    ax2.set_xlabel(x_label)
+    ax2.set_ylabel(r'Relative Energy Error $\frac{|E_{VQE} - E_{exact}|}{|E_{exact}|}$')
+    ax2.set_title('Ground State Energy Convergence')
+    ax2.set_xticks(qubits_nums)
+    ax2.grid(True, which="both", ls="--", alpha=0.4)
+
+    # ==========================================
+    # CALCULATIONS
+    # ==========================================
+    for ansatz in ansatz_comparison:
+        if ansatz == list(ansatz_comparison.keys())[0]:
+            dither_add = - np.array([dither]*len(qubits_nums))
+            color = '#d62728'
+            error_color="#841414"
+        elif ansatz == list(ansatz_comparison.keys())[-1]:
+            dither_add = + np.array([dither]*len(qubits_nums))
+            color = '#1f77b4'
+            error_color="#151C90"
+        else:
+            dither_add = 0
+            color = "#157931"
+            error_color="#044626"
+        comparisons = ansatz_comparison[ansatz]
+        # Overlap data
+        mean_overlaps = np.array([comparisons[q]["Overlap_Mean"] for q in comparisons])
+        std_overlaps = np.array([comparisons[q]["Overlap_Error"] for q in comparisons])
+
+        # Energy data (Mean and std from VQE)
+        exact_energies = np.array([comparisons[q]["Num_Energy_Value"] for q in comparisons]) # Numpy exacto
+        vqe_energies = np.array([comparisons[q]["Sim_Energy_Mean"] for q in comparisons]) # VQE medio
+        std_energies = np.array([comparisons[q]["Sim_Energy_Error"] for q in comparisons]) # Error estadístico/algorítmico del VQE
+
+        # Infidelidad = 1 - Overlap
+        infidelities = 1.0 - mean_overlaps
+        # El error de la infidelidad es exactamente igual al error del overlap
+        error_infidelities = std_overlaps
+
+        # Evitar ceros absolutos para la escala logarítmica (añadimos un epsilon minúsculo)
+        infidelities = np.clip(infidelities, 1e-10, None) 
+
+        # Error relativo de energía: |E_vqe - E_exact| / |E_exact|
+        rel_energy_error = np.abs(vqe_energies - exact_energies) / np.abs(exact_energies)
+
+        # Propagación del error para el error relativo: std_E / |E_exact|
+        rel_energy_error_std = std_energies / np.abs(exact_energies)
+
+        ax1.errorbar(np.array(qubits_nums) + dither_add, infidelities, yerr=error_infidelities, 
+                        fmt='-o', ecolor=error_color, capsize=4, 
+                        color=color,
+                        markersize=6, linewidth=1.5, label=f'{ansatz} VQE')
+
+        ax2.errorbar(np.array(qubits_nums) + dither_add, rel_energy_error, yerr=rel_energy_error_std, 
+                        fmt='-s', ecolor=error_color, capsize=4, 
+                        color=color,
+                        markersize=6, linewidth=1.5, label=f'{ansatz} VQE')
+        ax1.set_xticks(qubits_nums)
+        # Forzar a que el eje X muestre los números exactos que queremos
+        ax1.set_xticklabels([str(l) for l in qubits_nums])
+        ax2.set_xticks(qubits_nums)
+        # Forzar a que el eje X muestre los números exactos que queremos
+        ax2.set_xticklabels([str(l) for l in qubits_nums])
+
+    ax1.legend(title="Ansatz")
+    ax2.legend(title="Ansatz")
+
+    plt.suptitle("VQE Vacuum Preparation: Infidelity and Relative Energy Error")
+
+    plt.tight_layout()
+
+    return fig, (ax1, ax2)
+
+
+def plot_duration_ansatzes(qubits_nums,
+                           ansatz_comparison,
+                           dither = 0.1,
+                           x_label= 'System Size (L)'):
+    '''
+    Figures: 00_02_Overlap_Vs_Reps_Duration and 00_03_Overlap_Vs_Qubits_Duration
+    '''
+    # ==========================================
+    # PLOT CONFIG
+    # ==========================================
+    # Academic style
+    plt.rcParams.update({
+            "font.family": "serif",
+            "axes.labelsize": 12,
+            "font.size": 10,
+            "legend.fontsize": 10,
+            "xtick.labelsize": 10,
+            "ytick.labelsize": 10
+        })
+
+    fig, ax = plt.subplots(figsize=(10, 5))
+
+    # --- Plot 1: Infidelity ---
+    ax.set_yscale('log')
+    ax.set_xlabel(x_label)
+    ax.set_ylabel('Execution Time (seconds)')
+    ax.set_title('VQE Convergence Time Comparison')
+    ax.set_xticks(qubits_nums)
+    ax.grid(True, ls="--", alpha=0.4)
+
+
+    # ==========================================
+    # CALCULATIONS
+    # ==========================================
+    for ansatz in ansatz_comparison:
+        if ansatz == list(ansatz_comparison.keys())[0]:
+            dither_add = - np.array([dither]*len(qubits_nums))
+            color = '#d62728'
+            error_color="#841414"
+        elif ansatz == list(ansatz_comparison.keys())[-1]:
+            dither_add = + np.array([dither]*len(qubits_nums))
+            color = '#1f77b4'
+            error_color="#151C90"
+        else:
+            dither_add = 0
+            color = "#157931"
+            error_color="#044626"
+        comparisons = ansatz_comparison[ansatz]
+        # Overlap data
+        mean_times = np.array([comparisons[q]["Time_Mean"] for q in comparisons])
+        std_times  = np.array([comparisons[q]["Time_Error"] for q in comparisons])
+
+        ax.errorbar(np.array(qubits_nums) + dither_add, mean_times, yerr=std_times, 
+                        fmt='-o', ecolor=error_color, capsize=4, 
+                        color=color,
+                        markersize=6, linewidth=1.5, label=f'{ansatz} VQE')
+
+        ax.set_xticks(qubits_nums)
+        # Force X-axis show exact numbers
+        ax.set_xticklabels([str(l) for l in qubits_nums])
+
+    ax.legend(title="Ansatz")
+
+    plt.tight_layout()
+    
+    return fig, ax
+
+
+def plot_computational_resources(ansatzes, L_vals, depths, cnots):
+    '''
+    Figure: 00_04_ComputationalResources
+    '''
+    # Plot config
+    plt.rcParams.update({"font.family": "serif", "font.size": 11})
+    fig, (ax1, ax2) = plt.subplots(1, 2, figsize=(12, 5))
+
+    # Plot CNOTs
+    for ansatz in ansatzes:
+        ax1.plot(L_vals, cnots[ansatz].values(), label=ansatz, linewidth=2)
+
+    ax1.set_xlabel('System Size (L)')
+    ax1.set_ylabel('Number of CNOT gates')
+    ax1.set_title('Entanglement Overhead')
+    ax1.grid(True, ls="--", alpha=0.4)
+    ax1.legend()
+
+    # Plot Depth
+    for ansatz in ansatzes:
+        ax2.plot(L_vals, depths[ansatz].values(), label=ansatz, linewidth=2)
+            
+    ax2.set_xlabel('System Size (L)')
+    ax2.set_ylabel('Transpiled Circuit Depth')
+    ax2.set_title('Circuit Depth Scaling')
+    ax2.grid(True, ls="--", alpha=0.4)
+    ax2.legend()
+
+    plt.suptitle('Computational Resources')
+    plt.tight_layout()
+
+    return fig, (ax1, ax2)
+
+
+def plot_variance_decay(ansatzes, L_vals, var_grads):
+    '''
+    Figure: 00_05_BarrenPlateaus
+    '''
+    fig, ax = plt.subplots(figsize=(7, 5))
+
+        # Logarithmic Y to show exponential decay as a straight line
+    for ansatz in ansatzes:
+        ax.plot(L_vals, var_grads[ansatz].values(), label=ansatz, linewidth=2)
+
+    ax.set_yscale('log')
+    ax.set_xlabel('System Size (L)')
+    ax.set_ylabel(r'Gradient Variance $\sum_i\left(\text{Var}[\partial\langle H\rangle/\partial\theta_i]\right)/N$')
+    ax.set_title('Barren Plateau Diagnosis')
+    ax.grid(True, which="both", ls="--", alpha=0.4)
+    ax.set_xticks(L_vals)
+    ax.legend()
+
+    plt.tight_layout()
+
+    return fig, ax
+

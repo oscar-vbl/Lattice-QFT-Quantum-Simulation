@@ -199,3 +199,84 @@ def fit_persistence(evolution_data, config,
         return fig, axes
     else:
         return simulated_gamma, gamma_analytical, gamma_err, eE_evol, cut_off_times
+
+def evaluate_energy_statevector(circuit, parameters, param_values, hamiltonian_matrix):
+    '''
+    Evaluate exact energy using Statevector
+    '''
+    bound_circuit = circuit.assign_parameters(dict(zip(parameters, param_values)))
+    state = Statevector(bound_circuit).data
+    # <psi | H | psi>
+    energy = np.real(np.vdot(state, hamiltonian_matrix.dot(state)))
+    return energy
+
+def calculate_global_gradient_variance(ansatz_circuit, hamiltonian_sparse, num_samples=100):
+    '''
+    Calculate mean variance of the gradient of all parameters inside a circuit.
+    '''
+    params = ansatz_circuit.parameters
+    num_params = len(params)
+    if num_params == 0:
+        return 0.0
+    
+    # Matrix to save all gradients: (num_samples, num_params)
+    all_gradients = np.zeros((num_samples, num_params))
+    
+    for s in range(num_samples):
+        # 1. Random point in the energy landscape
+        theta_random = np.random.uniform(0, 2*np.pi, num_params)
+        
+        # 2. Calculate gradient for each parameter
+        for i in range(num_params):
+            # Forward shift (+ pi/2)
+            theta_plus = theta_random.copy()
+            theta_plus[i] += np.pi / 2
+            e_plus = evaluate_energy_statevector(ansatz_circuit, params, theta_plus, hamiltonian_sparse)
+            
+            # Backward shift (+ pi/2)
+            theta_minus = theta_random.copy()
+            theta_minus[i] -= np.pi / 2
+            e_minus = evaluate_energy_statevector(ansatz_circuit, params, theta_minus, hamiltonian_sparse)
+            
+            # Gradient dH/d\theta_i
+            all_gradients[s, i] = 0.5 * (e_plus - e_minus)
+            
+    # 3. Calculate variance of each parameter
+    variances = np.var(all_gradients, axis=0)
+    
+    # 4. Mean of all variances
+    return np.mean(variances)
+
+def calculate_gradient_variance(ansatz_circuit,
+                                hamiltonian_sparse,
+                                num_samples=100,
+                                target_param_idx=0):
+    '''
+    Calculate gradient variance respect to the given target_param_idx parameter
+    '''
+    params = ansatz_circuit.parameters
+    if len(params) == 0:
+        return 0.0
+        
+    gradients = []
+    
+    for _ in range(num_samples):
+        # 1. Random point in the energy landscape
+        theta_random = np.random.uniform(0, 2*np.pi, len(params))
+        
+        # 2. Forward shift (+ pi/2)
+        theta_plus = theta_random.copy()
+        theta_plus[target_param_idx] += np.pi / 2
+        e_plus = evaluate_energy_statevector(ansatz_circuit, params, theta_plus, hamiltonian_sparse)
+        
+        # 3. Backward shift (- pi/2)
+        theta_minus = theta_random.copy()
+        theta_minus[target_param_idx] -= np.pi / 2
+        e_minus = evaluate_energy_statevector(ansatz_circuit, params, theta_minus, hamiltonian_sparse)
+        
+        # 4. Gradient calculation
+        grad = 0.5 * (e_plus - e_minus)
+        gradients.append(grad)
+        
+    return np.var(gradients)
+

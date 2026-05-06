@@ -19,16 +19,14 @@ def parseDictToPlot(
     return ", ".join(f"{k}={v:.2f}" if isinstance(v, float) else f"{k}={v}" for k, v in params.items())
 
 def saveJsonConfig(config, saveName="config", saveFolder=None):
-    if not saveFolder:
-        saveFolder = CONFIGS_FOLDER
+    if not saveFolder: saveFolder = CONFIGS_FOLDER
     os.makedirs(saveFolder, exist_ok=True)
     savePath = os.path.join(saveFolder, saveName)
     with open(savePath, "w") as f:
         json.dump(config, f, indent=4)
 
-def loadJsonConfig(fileName, folderName=None):
-    if not folderName:
-        saveFolder = CONFIGS_FOLDER
+def loadJsonConfig(fileName, saveFolder=None):
+    if not saveFolder: saveFolder = CONFIGS_FOLDER
     os.makedirs(saveFolder, exist_ok=True)
     savePath = os.path.join(saveFolder, fileName)
     with open(savePath, "r") as f:

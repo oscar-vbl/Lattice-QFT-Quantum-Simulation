@@ -110,6 +110,18 @@ JSON Hamiltonian parameters. Example structure:
 
 ## Analysis Workflow
 
+### `Results/R00_AnsatzValidation.py`
+
+Script to study different ansatzes and validate the choice:
+
+1. **Ansatz Choice**: HVA (Physics Informed) and ExcitationPreserving (Hardware-Efficient)
+2. **Error in fidelity and energy**
+3. **Convergence time**
+4. **Computational resources**: Number of CNOTs and transpiled circuit depth
+5. **Barren Plateaus Diagnosis**: Check of the exponential decay of the gradient variance
+
+Output saved to `../data/` and `../plots/`.
+
 ### `Results/R01_Persistence.py`
 
 Script to calculate vacuum persistence related results:

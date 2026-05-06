@@ -68,6 +68,7 @@ This non-perturbative formula predicts exponential suppression of the ground sta
     ├── Configs/                     # Hamiltonian parameter JSON configs
     ├── Results/
     │   └── R00_ResultsCommon.py     # Reusable functions for results analysis
+    │   └── R01_AnsatzValidation.py  # Ansatz study and choice
     │   └── R01_Persistence.py       # Vacuum persistence analysis
     │   └── R01_Persistence.ipynb    # Vacuum persistence analysis in notebook format
     └── Tests/

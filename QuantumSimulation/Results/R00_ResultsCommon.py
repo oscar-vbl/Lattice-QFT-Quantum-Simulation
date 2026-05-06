@@ -5,6 +5,7 @@ import sys
 import numpy as np
 import time
 import copy
+import pandas as pd
 from pathlib import Path
 sys.path.append(Path(__file__).parent.parent.as_posix())
 from _config import PLOTS_FOLDER as plt_folder
@@ -32,8 +33,10 @@ def load_evolution_and_initial(analysis_name, values,
     for value in values:
         if isinstance(value, int) or isinstance(value, np.integer):
             fileValue = str(value)
-        else:
+        elif fileValue is not None:
             fileValue = f"{value:.2f}"
+        else:
+            fileValue = ""
 
         if use_simulated_data:
             # Load previously simulated data
@@ -44,7 +47,10 @@ def load_evolution_and_initial(analysis_name, values,
                 initial_state  = None
             try:
                 # Load evolution data
-                evolution_data = load_data(analysis_name, evolution_temp.format(value=fileValue), indexSet="Time")
+                if backup_config["Temporal Evolution"].get("Active", True):
+                    evolution_data = load_data(analysis_name, evolution_temp.format(value=fileValue), indexSet="Time")
+                else:
+                    evolution_data = pd.DataFrame()
                 # Store in dict
                 values_data[value] = {
                     "evolution_data": evolution_data,
@@ -93,4 +99,63 @@ def load_evolution_and_initial(analysis_name, values,
             else:
                 print(f"{getTimer()} ERROR: No backup config provided for value={value}. Skipping.")
         
+    return values_data
+
+def load_simulator_instance(analysis_name, values,
+                           initial_state_temp,
+                           use_simulated_data=True,
+                           backup_config=None,
+                           backup_key="L",
+                           backup_key_is_quench=False,
+                           save_if_simulated=True):
+    values_data = {}
+    for value in values:
+        if isinstance(value, int) or isinstance(value, np.integer):
+            fileValue = str(value)
+        elif fileValue is not None:
+            fileValue = f"{value:.2f}"
+        else:
+            fileValue = ""
+
+        if use_simulated_data:
+            # Load previously simulated data
+            try:
+                # Load simulator instance
+                simulator = load_data(analysis_name,  initial_state_temp.format(value=fileValue))
+                values_data[value] = {
+                    "simulator": simulator
+                }
+            except:
+                simulator = None
+        else:
+            # Skip loading data to run simulation
+            simulator = None
+        
+        if simulator is None:
+            # Run simulation if no previous data is loaded and config is provided
+            if backup_config is not None:
+                print(f"{getTimer()} INFO: Running simulation for value={value} with backup config.")
+                value_config = copy.deepcopy(backup_config)
+                if backup_key_is_quench:
+                    value_config["Temporal Evolution"]["Quench"]["Parameters_to_Change"][backup_key] = value
+                else:
+                    if backup_key == "L" or backup_key == "QubitsNumber":
+                        value_config["QubitsNumber"] = value
+                        value_config["Hamiltonian"]["Parameters"]["L"] = value
+                    else:
+                        value_config["Hamiltonian"]["Parameters"][backup_key] = value
+                simulator, duration = get_simulation_data(value_config, initial_state=None)
+                values_data[value] = {
+                    "simulator": simulator
+                }
+                print(f"{getTimer()} INFO: Simulation for value={value} took {(duration):.2f} seconds.")
+                if save_if_simulated:
+                    # Save simulator instance
+                    save_data(simulator, analysis_name, initial_state_temp.format(value=fileValue), rootPath=data_folder)
+            else:
+                #print(f"{getTimer()} ERROR: No backup config provided for value={value}. Skipping.")
+                values_data[value] = {
+                    "simulator": simulator
+                }
+
     return values_data

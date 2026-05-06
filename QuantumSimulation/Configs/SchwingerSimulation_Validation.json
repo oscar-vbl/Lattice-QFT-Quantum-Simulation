@@ -17,7 +17,7 @@
     "Ansatz": {
         "Type": "HVA",
         "Entanglement": "linear",
-        "Reps": 4,
+        "Reps": 3,
         "Initial State": {
             "Vacuum": true,
             "Staggered": true

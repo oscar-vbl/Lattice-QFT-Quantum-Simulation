@@ -133,8 +133,8 @@ class SchwingerSimulation:
         if self.config.get("Temporal Evolution", {}).get("Active", False):
             self.final_state, self.evolution_data = self.evolve_state()
 
-        # Plot data (not developed yet, at very first stage)
-        # Check ResultsSimulation for simple results examples
+        # Additional results and calculations (not developed in this module)
+        # Check Results for results examples
         print(f"{getTimer()} INFO: Simulation ended.")
         print("#" * 70 + "\n")
 
@@ -145,6 +145,7 @@ class SchwingerSimulation:
             backend_options   = backend_config.get("Options", {})
         else:
             self.backend_type = None
+            backend_options   = {}
 
         self.precision = backend_options.get("Precision", None)
 
@@ -405,6 +406,8 @@ class SchwingerSimulation:
                 pbar.refresh()
 
         self.vqe_duration = time.time() - vqe_start
+        self.vqe_iters    = result.nit if hasattr(result, 'nit') else None
+        self.vqe_success  = result.success
 
         vacuum_parameters = result.x
         vacuum_state      = self.ansatz.assign_parameters(vacuum_parameters)
@@ -544,7 +547,10 @@ class SchwingerSimulation:
             for t in pbar:
                 for obs in observables_list:
                     spec_params = observables_params.get(obs, None)
-                    value = self.calculate_observable(obs, state, initial_state, spec_params=spec_params, estimator=self.estimator, precision=self.precision)
+                    value = self.calculate_observable(obs, state, initial_state,
+                                                      spec_params=spec_params,
+                                                      estimator=self.estimator, precision=self.precision,
+                                                      sampler=self.sampler)
                     if obs == "Pair_Creation":
                         n_e, n_p = value
                         observables_data[f"{obs}_electron"].append(n_e)
