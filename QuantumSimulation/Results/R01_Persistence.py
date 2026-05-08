@@ -188,7 +188,7 @@ if __name__ == "__main__":
         save_data(fig,            analysis_name, f"{file_name}.png", rootPath=plt_folder, dpi=300)
         save_data(fit_results_df, analysis_name, f"{file_name}.csv", rootPath=plt_folder)
 
-    if True: # 4. Show best fit for different values of e0
+    if False: # 4. Show best fit for different values of e0 (Strong field regime)
         # Take best simulation
         qubits_num = best_qubit_num
 
@@ -226,7 +226,50 @@ if __name__ == "__main__":
             qubits_num_config["Hamiltonian"]["Parameters"],
             remove_keys=["e0"],
             rename_keys={})
-        fig, ax = plot_gamma_vs_e0(fit_results_df, params=plot_params)
+        fig, ax = plot_gamma_vs_e0(fit_results_df, params=plot_params, title_suffix=" (Weak Field Regime)")
+        # Save plot and data
+        save_data(fig,            analysis_name, f"{file_name}.png", rootPath=plt_folder, dpi=300)
+        save_data(fit_results_df, analysis_name, f"{file_name}.csv", rootPath=plt_folder)
+
+    if True: # 4. Show best fit for different values of e0
+        # Take best simulation
+        qubits_num = best_qubit_num
+
+        analysis_name = f"e0_quench_{qubits_num}qubits"
+        file_name     = f"e0_quench_{qubits_num}qubits"
+
+        # Define e0 values to show Gamma
+        min_e0, max_e0 = 0.2, 0.36
+        step = 0.04
+        e0_values = np.arange(min_e0, max_e0+step, step)
+
+        # Define e0 values to show Gamma
+        min_e0_2, max_e0_2 = 0.4, 0.98
+        step2 = 0.02
+        e0_values = np.concatenate((e0_values, np.arange(min_e0_2, max_e0_2+step2, step2)))
+        # Initial state for simulation (in case data is not found)
+        # Can get from previous simulation, it's the same for all e0 since e0 is quenched
+        try:    initial_state = qubits_num_data[qubits_num]["initial_state"]
+        except: initial_state = None
+        
+        e0_data = load_evolution_and_initial(analysis_name, e0_values,
+                                        evolution_temp="e0_{value}_quench_data.csv",
+                                        initial_state_temp="e0_{value}_initial_state.qpy",
+                                        backup_config=qubits_num_config,
+                                        backup_initial_state=initial_state,
+                                        backup_key="e0",
+                                        backup_key_is_quench=True,
+                                        use_simulated_data=USE_SIMULATED_DATA)
+
+        # Get results of gamma(e0)
+        fit_results_df = fit_persistence_e0(qubits_num_config, e0_values, e0_data)
+
+        # Plot gamma(e0)
+        plot_params = parseDictToPlot(
+            qubits_num_config["Hamiltonian"]["Parameters"],
+            remove_keys=["e0"],
+            rename_keys={})
+        fig, ax = plot_gamma_vs_e0(fit_results_df, params=plot_params, title_suffix=" (Weak Field Regime)")
         # Save plot and data
         save_data(fig,            analysis_name, f"{file_name}.png", rootPath=plt_folder, dpi=300)
         save_data(fit_results_df, analysis_name, f"{file_name}.csv", rootPath=plt_folder)
@@ -234,7 +277,12 @@ if __name__ == "__main__":
     if True: # 5. Plot log Gamma vs 1/e0 in logartihmic scale for Schwinger regime
         analysis_name = f"best_{qubits_num}_logPersistenece_vs_electricField"
         file_name     = f"best_{qubits_num}_logPersistenece_vs_electricField"
-        min_e0, max_e0 = 0.4, 0.541 # Found by inspection
+
+        # Find minumum and maximum e0 values to show Schwinger regime by looking at previous fit results
+        max_deviation = 0.2 # Maximum deviation to consider for Schwinger regime (20%)
+        fit_results_df["Dev"] = 1 - fit_results_df["Gamma_Analytical"] / fit_results_df["Gamma_Simulated"]
+        e0_values_schwinger = fit_results_df[np.abs(fit_results_df["Dev"]) <= max_deviation].index.values
+        min_e0, max_e0 = e0_values_schwinger.min(), e0_values_schwinger.max()
 
         # Take e0 values from previous fit results
         e0_values = fit_results_df.index.values

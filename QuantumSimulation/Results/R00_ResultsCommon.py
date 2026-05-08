@@ -33,7 +33,7 @@ def load_evolution_and_initial(analysis_name, values,
     for value in values:
         if isinstance(value, int) or isinstance(value, np.integer):
             fileValue = str(value)
-        elif fileValue is not None:
+        elif value is not None:
             fileValue = f"{value:.2f}"
         else:
             fileValue = ""
@@ -112,7 +112,7 @@ def load_simulator_instance(analysis_name, values,
     for value in values:
         if isinstance(value, int) or isinstance(value, np.integer):
             fileValue = str(value)
-        elif fileValue is not None:
+        elif value is not None:
             fileValue = f"{value:.2f}"
         else:
             fileValue = ""

@@ -88,7 +88,8 @@ def plot_gamma_vs_qubitNum(fit_results_df, params=None):
     return fig, ax
 
 def plot_simulated_vs_analytical(decay_model, persistence, t_values, gamma_simulada,
-                                 A_fit, gamma_analitica, params=None):
+                                 A_fit, gamma_analitica, params=None,
+                                 time_offset=0):
     '''
     Figure: best_{best_qubit_num}_decay_rate
     '''
@@ -125,6 +126,19 @@ def plot_simulated_vs_analytical(decay_model, persistence, t_values, gamma_simul
     # R² > 0.99 → pure exponential decay (Schwinger)
     # R² < 0.95 → there is curvature, a mixture of effects
 
+    # Add time offset to make plot start from the end of the Zeno regime (T_Zeno_End) instead of t=0
+    if time_offset != 0:
+        for ax in [ax1, ax2]:
+            # 1. Extract lines
+            for line in ax.get_lines():
+                # Get actual x data and add time offset
+                old_x = line.get_xdata()
+                line.set_xdata(old_x + time_offset)
+
+            # 2. Recalculate limits and redraw 
+            ax.relim()
+            ax.autoscale_view()
+
     plt.suptitle("Exponential Decay Fit and Schwinger Prediction")
     if params:
         fig.text(0.5, 0.945, f"Parameters: {params}",
@@ -156,7 +170,7 @@ def plot_persistenece_vs_time_regimes(evolution_data, cut_off_times, params=None
     plt.tight_layout()
     return fig, ax
 
-def plot_gamma_vs_e0(fit_results_df, params=None):
+def plot_gamma_vs_e0(fit_results_df, params=None, title_suffix=""):
     '''
     Figure: e0_quench_{qubits_num}qubits
     '''
@@ -165,7 +179,7 @@ def plot_gamma_vs_e0(fit_results_df, params=None):
     ax.plot(fit_results_df.index, fit_results_df["Gamma_Simulated"],  "bs",  label="$\\Gamma$ (Simulated)",  markersize=5)
     ax.set_xlabel("$\\varepsilon_0$")
     ax.set_ylabel("$\\Gamma$")
-    plt.suptitle("Vacuum Persistence $\\Gamma$ vs Background Field $\\varepsilon_0$")
+    plt.suptitle(f"Vacuum Persistence $\\Gamma$ vs Background Field $\\varepsilon_0${title_suffix}")
     if params:
         ax.set_title(f"Parameters: {params}", fontsize=10)
     ax.legend()
@@ -196,7 +210,8 @@ def ind_plot_gamma_electricField(ax,
     # Add line in the plot
     x_fit = np.linspace(x.min(), x.max(), 100)
     y_fit = linear_model(x_fit, a_fit, b_fit)
-    ax.plot(x_fit, y_fit, "b--", label=f"Fit: a={a_fit:.4f}, b={b_fit:.4f}")
+    r_squared = np.corrcoef(x, y)[0,1]**2
+    ax.plot(x_fit, y_fit, "b--", label=f"Fit: $a={a_fit:.4f}, b={b_fit:.4f}$, $R^2={r_squared:.4f}$")
     ax.legend()
     ax.grid(True)
     return ax, popt

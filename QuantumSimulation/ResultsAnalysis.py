@@ -36,6 +36,7 @@ def check_regime(L, a, m, e0):
 
 def fit_persistence(evolution_data, config,
                     initial_state=None,
+                    interference_method="log_derivative",
                     use_offset=False,
                     return_plot=False,
                     print_info=True):
@@ -97,27 +98,75 @@ def fit_persistence(evolution_data, config,
     persistence_deriv = persistence_deriv[mask2[1:]]
     cut_off_times["T_Zeno_End"] = cut_off_zeno_t
 
-    # 3. Early stop for step: 
-    # Look if curve gets plain or changes concavity
-    # 1st der close to 0 or positive → not exponential anymore, stop before
-    # 2nd der changes sign → inflection point, stop before
-    sec_persistence_deriv = np.diff(persistence_deriv) / np.diff(t_values)
+    # 3. Early stop for step:
+    if interference_method == "log_derivative":
+        # Logarithmic Derivative Method
+        # In the exponential region, ln(P) is a straight line, so its first derivative
+        # is constant (approx. -Gamma). When revivals start, the curve becomes
+        # flatter and the derivative starts to 0.
+        
+        # 3.1. Drop negatives and zeros to avoid issues with logarithm
+        valid_mask = persistence > 1e-12
+        t_valid = t_values[valid_mask]
+        p_valid = persistence[valid_mask]
+        
+        # 3.2. Log and first derivative
+        log_persistence = np.log(p_valid)
+        d_log_p = np.diff(log_persistence) / np.diff(t_valid)
+        t_d = t_valid[1:] # Tiempos asociados a la derivada
+        
+        # 3.3. Base line for slope.
+        # We take the first three points after Zeno where it is pure exponential
+        window = max(3, len(d_log_p) // 10)
+        baseline_slope = np.mean(d_log_p[:window])
+        
+        # 3.4. Tolerance threshold
+        # We consider that when the slope gets bigger than tolerance * baseline_slope, 
+        # where baseline_slope is the mean log slope of the 3 first points (pure exp),
+        # the interference starts
+        # Slopes are negative, so we check when it becomes less negative (bigger)
+        tolerance = 0.75 
+        threshold_slope = baseline_slope * tolerance
+        
+        # 3.5. Check when slope gets bigger than threshold
+        deviations = np.where(d_log_p[window:] > threshold_slope)[0]
+        
+        if len(deviations) > 0:
+            # Cut off index
+            cut_off_idx = deviations[0] + window
+            t_concavity_change = t_d[cut_off_idx]
+            
+            # Logarithmic derivative change found, we must redefine Schwinger cutoff
+            # There is a region of interference between Schwinger and revivals
+            cut_off_times["T_Interference_End"] = cut_off_times["T_Schwinger_End"]
+            cut_off_times["T_Schwinger_End"]    = t_concavity_change
+        else:
+            # No concavity change found
+            # Schwinger cutoff is at the local minima defined before
+            # Interference cutoff is null
+            t_concavity_change = t_values[-1]
     
-    # If sec derivative changes sign, it indicates an inflection point.
-    sec_der_negs = np.where(sec_persistence_deriv < 0)[0]
-    if len(sec_der_negs) > 0:
-        concavity_change_index = sec_der_negs[0] 
-        t_concavity_change = t_values[concavity_change_index]
-        # Concavity change found, we must redefine Schwinger cutoff
-        # There is a region of interference between Schwinger and revivals
-        cut_off_times["T_Interference_End"] = cut_off_times["T_Schwinger_End"]
-        cut_off_times["T_Schwinger_End"]    = t_concavity_change
-    else:
-        concavity_change_index = len(persistence) - 1
-        t_concavity_change = t_values[concavity_change_index]
-        # No concavity change found
-        # Schwinger cutoff is at the local minima defined before
-        # Interference cutoff is null
+    elif interference_method == "concavity_change":
+        # Look if curve gets plain or changes concavity
+        # 1st der close to 0 or positive → not exponential anymore, stop before
+        # 2nd der changes sign → inflection point, stop before
+        sec_persistence_deriv = np.diff(persistence_deriv) / np.diff(t_values)
+        
+        # If sec derivative changes sign, it indicates an inflection point.
+        sec_der_negs = np.where(sec_persistence_deriv < 0)[0]
+        if len(sec_der_negs) > 0:
+            concavity_change_index = sec_der_negs[0] 
+            t_concavity_change = t_values[concavity_change_index]
+            # Concavity change found, we must redefine Schwinger cutoff
+            # There is a region of interference between Schwinger and revivals
+            cut_off_times["T_Interference_End"] = cut_off_times["T_Schwinger_End"]
+            cut_off_times["T_Schwinger_End"]    = t_concavity_change
+        else:
+            concavity_change_index = len(persistence) - 1
+            t_concavity_change = t_values[concavity_change_index]
+            # No concavity change found
+            # Schwinger cutoff is at the local minima defined before
+            # Interference cutoff is null
     
     # Apply cut-off to discard non-exponential tail
     mask3       = t_values <= t_concavity_change
@@ -195,7 +244,10 @@ def fit_persistence(evolution_data, config,
             {**config["Hamiltonian"]["Parameters"], **config["Temporal Evolution"]["Quench"]["Parameters_to_Change"]},
             remove_keys=[],
             rename_keys={"e0": "$\\varepsilon_0$"})
-        fig, axes = plot_simulated_vs_analytical(decay_model, persistence, t_values, simulated_gamma, popt[1], gamma_analytical, params=plot_params)
+        fig, axes = plot_simulated_vs_analytical(decay_model, persistence, t_values,
+                                                 simulated_gamma, popt[1], gamma_analytical,
+                                                 params=plot_params,
+                                                 time_offset=cut_off_times["T_Zeno_End"])# Add T_Schwinger to plot from the beginning of the curve
         return fig, axes
     else:
         return simulated_gamma, gamma_analytical, gamma_err, eE_evol, cut_off_times
