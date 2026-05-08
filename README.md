@@ -6,7 +6,7 @@ Quantum simulation of the **Schwinger effect** in 1+1D lattice QED on NISQ quant
 
 This repository implements the quantum simulation of non-perturbative QED phenomena on gate-based quantum computers. Specifically, it simulates the **Schwinger pair production** (electron-positron pair creation from the vacuum under strong electric fields) in (1+1)-dimensional lattice QED, bridging lattice gauge theory with variational quantum algorithms.
 
-Some results and examples can be viewed as notebooks at QuantumSimulation/Results (only persistance analysis by the moment).
+Some results and examples can be viewed as notebooks at QuantumSimulation/Results (by the moment, analysis of ansatzes and persistence).
 
 ### Key Features
 
@@ -68,7 +68,8 @@ This non-perturbative formula predicts exponential suppression of the ground sta
     ├── Configs/                     # Hamiltonian parameter JSON configs
     ├── Results/
     │   └── R00_ResultsCommon.py     # Reusable functions for results analysis
-    │   └── R01_AnsatzValidation.py  # Ansatz study and choice
+    │   └── R00_AnsatzValidation.py  # Ansatz study and choice
+    │   └── R00_Validation.ipynb     # Ansatz study and choice notebook
     │   └── R01_Persistence.py       # Vacuum persistence analysis
     │   └── R01_Persistence.ipynb    # Vacuum persistence analysis in notebook format
     └── Tests/
@@ -260,15 +261,7 @@ pip install -e .
 - **Only Schwinger Model Implemented**: This is the sole gauge theory currently supported. Extensions to SU(2) or higher-dimensional QED are future work.
 - **Small System Sizes**: Simulations limited to ~10-20 qubits on current NISQ devices due to noise and circuit depth.
 - **Classical Density Matrix Only**: Uses Qiskit Aer statevector simulator; no noise models implemented yet.
-- **Vacuum Perp to Ground State**: Strong-field regimes require careful initialization and choice of ansatz.
-
-## Output
-
-Results include:
-
-- **evolution_data.csv**: Time-series observables (Persistence, Electric field, Pair creation)
-- **Figures**: Persistence decay curves, $\Gamma$ vs system size, regime boundaries
-- **Analysis**: Best-fit Schwinger rate, deviation from theory, cut-off times
+- **Vacuum Preparation**: Strong-field regimes require careful initialization and choice of ansatz.
 
 ## References
 
