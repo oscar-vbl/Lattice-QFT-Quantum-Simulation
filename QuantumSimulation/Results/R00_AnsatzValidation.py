@@ -25,7 +25,8 @@ from _config import DATA_FOLDER  as data_folder
 from Utils import getTimer, load_data, save_data, loadJsonConfig
 from SchwingerSimulation import SchwingerSimulation
 from ResultsAnalysis import calculate_global_gradient_variance
-from Plots import plot_validation_ansatzes, plot_duration_ansatzes, plot_computational_resources, plot_variance_decay
+from Plots import plot_validation_ansatzes, plot_duration_ansatzes,\
+plot_computational_resources, plot_variance_decay, plot_ansatz_circuit
 
 from R00_ResultsCommon import load_simulator_instance, get_simulation_data
 
@@ -175,6 +176,7 @@ def get_ansatz_comparison(config,
     return comparisons
 
 
+
 if __name__ == "__main__":
     # Load Config
     config = loadJsonConfig("SchwingerSimulation_Validation.json")
@@ -188,31 +190,7 @@ if __name__ == "__main__":
         L = 6
         reps = 1
         for ansatz in ansatzes:
-            ansatz_config = copy.deepcopy(config)
-            ansatz_config["Ansatz"]["Type"] = ansatz
-            ansatz_config["Ansatz"]["Reps"] = reps
-            ansatz_config["QubitsNumber"] = L
-            ansatz_config["Hamiltonian"]["Parameters"]["L"] = L
-            sim = SchwingerSimulation(copy.deepcopy(ansatz_config))
-            sim.hamiltonian_prep = sim.get_hamiltonian()
-            ansatz_circuit = sim.get_ansatz()
-            # Add to show better qubits at the begining
-            qr = QuantumRegister(L, name='q')
-            clean_circuit = QuantumCircuit(qr)
-            clean_circuit.compose(ansatz_circuit, inplace=True)
-            fig = clean_circuit.draw(
-                output='mpl', 
-                fold=-1,           # Delete empty wires
-                scale=1.1,         # Scale the image
-                initial_state=True,
-                style={
-                    'name': 'bw',  # Black and White
-                    'fontsize': 9,
-                    'fontname': 'serif', # Smaller
-                    'subfontsize': 7
-                }
-            )
-            fig.tight_layout()
+            fig = plot_ansatz_circuit(config, L, reps, ansatz)
             # Save circuit
             file_name = f"00_01_Circuit_{ansatz}"
             save_data(fig, analysis_name, f"{file_name}.png", rootPath=plt_folder, dpi=300)
@@ -255,7 +233,7 @@ if __name__ == "__main__":
 
     # 3. Overlap vs Qubits number ($L$)
     if True:
-        qubits_nums = [4,6,8,10,12,14,16,18]
+        qubits_nums = [4,6,8,10,12,14,16]
         ansatzes = ["HVA", "HVA Simple", "ExcitationPreserving"]
         ansatz_comparison = {}
         for ansatz in ansatzes:
@@ -321,7 +299,7 @@ if __name__ == "__main__":
     # 5. Barren plateaus
     if True:
 
-        L_vals = [4, 6, 8, 10]
+        L_vals = [4, 6, 8, 10, 12]
         var_grads = {}
 
         for ansatz in ansatzes:

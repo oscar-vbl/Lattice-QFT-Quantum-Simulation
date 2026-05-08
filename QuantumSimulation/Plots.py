@@ -2,7 +2,8 @@ import matplotlib.pyplot as plt
 import numpy as np
 from scipy.optimize import curve_fit
 from Utils import getTimer
-from qiskit.circuit import QuantumCircuit, Parameter
+from qiskit.circuit import QuantumCircuit, Parameter, QuantumRegister
+import copy
 
 def simplePlot(x, y, title="", xlabel="", ylabel="", savePath=None):
     '''
@@ -252,6 +253,38 @@ def plot_simple_hva_circuit(reps=1):
         qc.barrier()
 
     return qc
+
+def plot_ansatz_circuit(base_config, L, reps, ansatz):
+    '''
+    Figure: 00_01_Circuit_{ansatz}
+    '''
+    from SchwingerSimulation import SchwingerSimulation
+    ansatz_config = copy.deepcopy(base_config)
+    ansatz_config["Ansatz"]["Type"] = ansatz
+    ansatz_config["Ansatz"]["Reps"] = reps
+    ansatz_config["QubitsNumber"] = L
+    ansatz_config["Hamiltonian"]["Parameters"]["L"] = L
+    sim = SchwingerSimulation(copy.deepcopy(ansatz_config))
+    sim.hamiltonian_prep = sim.get_hamiltonian()
+    ansatz_circuit = sim.get_ansatz()
+    # Add to show better qubits at the begining
+    qr = QuantumRegister(L, name='q')
+    clean_circuit = QuantumCircuit(qr)
+    clean_circuit.compose(ansatz_circuit, inplace=True)
+    fig = clean_circuit.draw(
+                output='mpl', 
+                fold=-1,           # Delete empty wires
+                scale=1.1,         # Scale the image
+                initial_state=True,
+                style={
+                    'name': 'bw',  # Black and White
+                    'fontsize': 9,
+                    'fontname': 'serif', # Smaller
+                    'subfontsize': 7
+                }
+            )
+    fig.tight_layout()
+    return fig
 
 
 def plot_validation_ansatzes(qubits_nums,
