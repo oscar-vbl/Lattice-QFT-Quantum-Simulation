@@ -1,4 +1,6 @@
+QuantumSimulation/Calculations_.py
 QuantumSimulation/simpleSimulationZZZ.py
+QuantumSimulation/SchwingerSimulation_OldEvolve.py
 test.txt
 *.pyc
 __pycache__/

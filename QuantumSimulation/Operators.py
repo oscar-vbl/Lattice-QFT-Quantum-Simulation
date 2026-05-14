@@ -123,6 +123,29 @@ def buildPairCreationOperators(num_qubits: int):
     
     return op_ne, op_np
 
+def buildElectricFieldOperators(L, e0=0.0):
+    '''
+    Build the electric field operators for all L-1 links.
+    E(n) = e0 + sum_{k=0..n} Q_k
+    Returns a list of SparsePauliOp.
+    '''
+    ef_ops = []
+    
+    # Base field is E_0 * I
+    if e0 != 0:
+        current_op = SparsePauliOp.from_list([("I"*L, e0)])
+    else:
+        current_op = SparsePauliOp.from_list([("I"*L, 0.0)])
+        
+    # The lattice has L sites, but only L-1 links between them
+    for n in range(L - 1):
+        # Q_n = chargeOperator_i(n, L)
+        # Sum the charge operator of site n to the accumulated field
+        current_op = (current_op + chargeOperator_i(n, L)).simplify()
+        ef_ops.append(current_op)
+        
+    return ef_ops
+
 def numberOperator_i(i, L):
     '''
     Build the number operator n_i = (1 + Z_i)/2 for site i in a lattice of size L.

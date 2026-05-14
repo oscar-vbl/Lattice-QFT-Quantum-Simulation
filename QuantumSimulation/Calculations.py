@@ -4,11 +4,344 @@ as well as generic operations, such as expectation values, fidelity and amplitud
 '''
 
 from Utils import getTimer
-from Operators import gauss_operator, buildChargeOperatorMinimal, buildPairCreationOperators, measure_electric_field
+from Operators import gauss_operator, buildChargeOperatorMinimal,\
+    buildPairCreationOperators, measure_electric_field, buildElectricFieldOperators
 from qiskit.quantum_info import SparsePauliOp, Statevector
 from qiskit.circuit.quantumcircuit import QuantumCircuit, ClassicalRegister
-from qiskit.primitives import BaseEstimatorV2, BaseSamplerV2
+from qiskit.primitives import BaseEstimatorV2, BaseSamplerV2, PubResult, SamplerPubResult
 import numpy as np
+
+from abc import ABC, abstractmethod
+
+class BaseObservable(ABC):
+    '''
+    Base class for observables.
+
+    Abstract methods:
+    - get_pub: returns the tuple to send to the Estimator or Sampler for the calculation of the observable.
+    - process_pub_result: processes the result returned by the Estimator or Sampler to extract the value of the observable.
+    - calculate_exact: calculates the value of the observable using exact methods (Statevector or expm_multiply) for ideal execution.
+
+    Reserved methods:
+    - Operator expectation methods:
+        - _exactOperatorExpectation: calculates the expectation value of an operator for a given state using exact methods.
+        - _pubOperatorExpectation: calculates the expectation value of an operator for a given state using the result of an Estimator PUB.
+        - _pubOperatorExpectationMultiple: calculates the expectation values of multiple operators for a given state using the result of an Estimator PUB.
+    - Amplitude calculation methods:
+        - _exactAmplitudeCalculation: calculates the amplitude <target_state | state> using exact methods.
+        - _getAmplitudePub: returns the circuit to calculate the amplitude <target_state | state> using a Hadamard test for hardware execution.
+        - _pubAmplitudeCalculation: calculates the amplitude <target_state | state> using the result of a Sampler PUB.
+    - Fidelity calculation methods:
+        - _exactFidelityCalculation: calculates the fidelity between two states using exact methods.
+        - _getFidelityPub: returns the circuit to calculate the fidelity between two states using a Compute-Uncompute method for hardware execution.
+        - _pubFidelityCalculation: calculates the fidelity between two states using the result of a Sampler PUB.
+    '''
+    def __init__(self, name: str, primitive_type: str):
+        self.name           = name
+        self.primitive_type = primitive_type # "estimator" or "sampler"
+
+    # pub for hardware execution (Qiskit Primitives)
+    @abstractmethod
+    def get_pub(self, circuit: QuantumCircuit) -> tuple:
+        pass
+    
+    # Process the result returned by the Estimator or Sampler to extract the value of the observable.
+    @abstractmethod
+    def process_pub_result(self, result: PubResult) -> float:
+        pass
+
+    # For ideal execution (expm_multiply or Statevector)
+    @abstractmethod
+    def calculate_exact(self, statevector: Statevector | QuantumCircuit) -> float:
+        pass
+    
+    # Operator expectation methods
+    def _exactOperatorExpectation(self, state: Statevector | QuantumCircuit, operator: SparsePauliOp) -> float:
+        if isinstance(state, QuantumCircuit):
+            state = Statevector(state)        
+        return float(state.expectation_value(operator).real)
+    
+    def _pubOperatorExpectation(self, result: PubResult) -> float:
+        return float(np.squeeze(result.data.evs).real)
+
+    def _pubOperatorExpectationMultiple(self, result: PubResult) -> np.ndarray:
+        return np.squeeze(result.data.evs).real
+
+    # Amplitude calculation methods
+    def _exactAmplitudeCalculation(self,
+                                  state: Statevector | QuantumCircuit,
+                                  target_state: Statevector | QuantumCircuit) -> float:
+        if isinstance(state, QuantumCircuit):
+            state = Statevector(state)
+        if isinstance(target_state, QuantumCircuit):
+            target_state = Statevector(target_state)
+            
+        return target_state.inner(state)
+    
+    def _getAmplitudePub(self,
+                        state: QuantumCircuit,
+                        target_state: QuantumCircuit) -> float:
+
+        # Hardware method: Hadamard test
+        assert isinstance(state, QuantumCircuit), "State must be a QuantumCircuit."
+        assert isinstance(target_state, QuantumCircuit), "Target state must be a QuantumCircuit."
+        
+        n_qubits = state.num_qubits
+        
+        # System is in state  |0 ... 0>.
+        # 1. We create operator W = U_target^-1 * U_state
+        # We want to measure <0| W |0> = <0| U_target^-1 * U_state |0> = <target|state>
+        # with <0| W |0> = a + bi = z
+        W = QuantumCircuit(n_qubits)
+        W.compose(state, inplace=True)
+        W.compose(target_state.inverse(), inplace=True)
+        
+        # 2. Convert W in a controlled operation
+        cW = W.to_gate(label="cW").control(1)
+        
+        # 3. Create 1 qubit classical register to measure ancilla
+        # We use ancilla at the begining and apply Hadamard such that
+        # |state> = |0> \otimes |0 ... 0> ->
+        # |state> = \frac{1}{\sqrt{2}} (|0> + |1>) \otimes |0 ... 0>
+        cr = ClassicalRegister(1, "meas")
+        
+        # --- CIRCUIT FOR REAL PART ---
+        # Qubit 0 will be ancilla, Qubits 1 a N will be logical system
+        qc_real = QuantumCircuit(n_qubits + 1)
+        # |state> = |0> \otimes |0 ... 0>
+        qc_real.add_register(cr)
+        # H|state> = H|0> \otimes |0 ... 0> = \frac{1}{\sqrt{2}} (|0> + |1>) \otimes |0 ... 0>
+        qc_real.h(0) 
+        # Apply controlled-W gate, with ancilla as control and system as target
+        # (C-W) H |state> = \frac{1}{\sqrt{2}} (|0> \otimes |0 ... 0> + |1> \otimes W |0 ... 0>) 
+        qc_real.append(cW, range(n_qubits + 1))
+        # Apply another Hadamard on ancilla, since H \otimes H = 1
+        qc_real.h(0)
+        # H (C-W) H |state> = \frac{1}{\sqrt{2}} (H|0> \otimes |0 ... 0> + H|1> \otimes W |0 ... 0>) 
+        # H (C-W) H |state> = \frac{1}{2} [ |0> \otimes ((1 + W) |0 ... 0>) + |1> \otimes ((1 - W) |0 ... 0>) ]
+        # We measure P(0_A) = \frac{1}{4} | (1 + W) |0 ... 0> |^2
+        # = \frac{1}{4} (<s|s> + <s|W|s> + <s|W^+|s> + <s|s>) = 1/4 (1 + z + z* + 1) = 1/2 (1 + Re(z)) =  1/2 (1 + a)
+        # So, the real part of the measurement will be
+        # a = 2 P(0_A) - 1
+        qc_real.measure(0, 0)
+        
+        # --- CIRCUIT FOR IMAGINARY ---
+        # It's analogous to the real part, except we insert an S^\dagger
+        # so the imaginary part is extracted from the measurement (and not the real)
+        qc_imag = QuantumCircuit(n_qubits + 1)
+        qc_imag.add_register(cr)
+        qc_imag.h(0)
+        qc_imag.sdg(0) # Extra phase -pi/2 changes measurement basis
+        qc_imag.append(cW, range(n_qubits + 1))
+        qc_imag.h(0)
+        qc_imag.measure(0, 0)
+        
+        return qc_real, qc_imag
+
+    def _pubAmplitudeCalculation(self, result: SamplerPubResult) -> float:
+        # Detailed process on calculateAmplitude function
+        assert len(result) == 2, "Result must contain two entries: one for the real part and one for the imaginary part of the amplitude."
+        # Extract probabilities to measure 0 on ancilla
+        # Real part
+        counts_real = result[0].data.meas.get_counts()
+        shots_real = sum(counts_real.values())
+        p0_real = counts_real.get('0', 0) / shots_real
+        real_part = 2 * p0_real - 1
+        
+        # Imaginary part
+        counts_imag = result[1].data.meas.get_counts()
+        shots_imag = sum(counts_imag.values())
+        p0_imag = counts_imag.get('0', 0) / shots_imag
+        imag_part = 2 * p0_imag - 1
+        
+        # construct complex number
+        return complex(real_part, imag_part)
+
+    # Fidelity calculation methods
+    def _exactFidelityCalculation(self,
+                                  state_1: Statevector | QuantumCircuit,
+                                  state_2: Statevector | QuantumCircuit) -> float:
+
+        if isinstance(state_1, QuantumCircuit):
+            state_1 = Statevector(state_1)
+        if isinstance(state_2, QuantumCircuit):
+            state_2 = Statevector(state_2)
+        return float(np.abs(state_1.inner(state_2)) ** 2)
+    
+    def _getFidelityPub(self,
+                        state_1: QuantumCircuit,
+                        state_2: QuantumCircuit) -> float:
+
+        # Hardware method (Compute-Uncompute)
+        # state contains preparation ansatz + Trotter evolution
+        assert isinstance(state_1, QuantumCircuit), "State 1 must be a QuantumCircuit when using sampler."
+        assert isinstance(state_2, QuantumCircuit), "State 2 must be a QuantumCircuit when using sampler."
+        # New circuit for measurement
+        measure_circuit = state_1.copy()
+
+        # Undo initial state preparation (we apply ansatz inverse)
+        # initial_state_circuit is the circuit that prepared vacuum
+        measure_circuit.compose(state_2.inverse(), inplace=True)
+
+        # Measure all qubits at the end
+        measure_circuit.measure_all()
+
+        return measure_circuit
+
+    def _pubFidelityCalculation(self, result: SamplerPubResult) -> float:
+        # Detailed process on calculateFidelity function
+        # Counts (shots) of the measurement results at the end
+        counts = result.data.meas.get_counts()
+
+        # Fidelity is the probability of measuring the all-zeros state
+        # which would mean both states are the same.
+        # So we take the count of the all-zeros state and divide by total shots.
+        # If both states are the same (supposing vacuum), we would get
+        # |00...0> -> Circuit|00...0> -> Circuit^-1 Circuit|00...0> -> |00...0>
+        # so we would expect to measure all-zeros with probability 1, which means both states are the same, as expected.
+        total_shots = sum(counts.values())
+        zeros_state = '0' * len(list(counts.keys())[0])
+
+        fidelity = counts.get(zeros_state, 0) / total_shots   
+        return float(fidelity)
+
+class EnergyObservable(BaseObservable):
+    '''
+    Calculate energy as the expectation value of the Hamiltonian for a given state.
+    '''
+    def __init__(self, hamiltonian, precision=None):
+        super().__init__("Energy", "estimator")
+        self.hamiltonian = hamiltonian
+        self.precision   = precision
+
+    def get_pub(self, state: QuantumCircuit) -> tuple:
+        # PUB for Estimator
+        return (state, self.hamiltonian, None, self.precision)
+    
+    def process_pub_result(self, result: PubResult) -> float:
+        return self._pubOperatorExpectation(result)
+    
+    def calculate_exact(self, state: Statevector | QuantumCircuit) -> float:
+        return self._exactOperatorExpectation(state, self.hamiltonian)
+    
+class PersistenceObservable(BaseObservable):
+    '''
+    Calculate vacuum persistence as the fidelity of a given state and the initial vacuum state.
+    '''
+    def __init__(self, initial_state: Statevector | QuantumCircuit, precision=None):
+        super().__init__("Persistence", "sampler")
+        self.initial_state = initial_state
+        self.precision     = precision
+
+    def get_pub(self,
+            state: Statevector | QuantumCircuit
+            ) -> QuantumCircuit:
+        # PUB for Sampler
+        return (self._getFidelityPub(state, self.initial_state), None)
+    
+    def process_pub_result(self, result: SamplerPubResult) -> float:
+        return self._pubFidelityCalculation(result)
+    
+    def calculate_exact(self,
+            state: Statevector | QuantumCircuit
+        ) -> float:
+        return self._exactFidelityCalculation(state, self.initial_state)
+
+class GaussLawViolationObservable(BaseObservable):
+    '''
+    Check violation of Gauss' law as sum of the expectation value of the squared Gauss operator G_n^2
+    of all the sites on the lattice.
+    '''
+    def __init__(self, qubits_num: int, precision=None):
+        super().__init__("Gauss_Law_Violation", "estimator")
+        self.precision  = precision
+        self.qubits_num = qubits_num
+        
+        # Prebuild squared Gauss operators for all sites.
+        self.gauss_squared_ops = []
+        for n in range(qubits_num):
+            op = gauss_operator(n, qubits_num) @ gauss_operator(n, qubits_num)
+            self.gauss_squared_ops.append(op.simplify())
+
+    def get_pub(self, state: QuantumCircuit) -> tuple:
+        # Send complete list of operators.
+        return (state, self.gauss_squared_ops, None, self.precision)
+    
+    def process_pub_result(self, result: PubResult) -> float:
+        # evs is a numpy array on length number qubits (G_n^2)
+        evs = np.squeeze(result.data.evs).real
+        
+        # Sum all absolute values, to sum also local violations cancelled.
+        total_violation = np.sum(np.abs(evs))
+        return float(total_violation)
+    
+    def calculate_exact(self, state: Statevector | QuantumCircuit) -> float:
+        total_violation = 0.0
+        for op in self.gauss_squared_ops:
+            val = self._exactOperatorExpectation(state, op)
+            total_violation += np.abs(val)
+            
+        return float(total_violation)
+
+class PairCreationObservable(BaseObservable):
+    '''
+    Calculate the number of pairs created as the sum of the occupation numbers of all sites.
+    The occupation number of a site is calculated as n_occ = (1 + <Z>) / 2,
+    where <Z> is the expectation value of the Z operator on that site.
+    For even sites (electrons) we count the number of electrons created as 1 - n_occ,
+    while for odd sites (positrons) we count the number of positrons created as n_occ.    
+    '''
+    def __init__(self, qubits_num: int, precision=None):
+        super().__init__("Pair_Creation", "estimator")
+        self.precision  = precision
+        self.qubits_num = qubits_num
+        
+        # Prebuild number of electrons and positrons operators.
+        self.n_e_obs, self.n_p_obs = buildPairCreationOperators(qubits_num)
+
+    def get_pub(self, state: QuantumCircuit) -> tuple:
+        # Send in one pub
+        return (state, [self.n_e_obs, self.n_p_obs], None, self.precision)
+    
+    def process_pub_result(self, result: PubResult) -> tuple[float, float]:
+        evs = self._pubOperatorExpectationMultiple(result)
+        return tuple([ev for ev in evs])
+    
+    def calculate_exact(self, state: Statevector | QuantumCircuit) -> float:
+        n_e = self._exactOperatorExpectation(state, self.n_e_obs)
+        n_p = self._exactOperatorExpectation(state, self.n_p_obs)
+        return n_e, n_p
+
+class ElectricFieldObservable(BaseObservable):
+    '''
+    Calculate the electric field at each link as E(n) = E_0 + sum_{k=0..n} Q_k.
+    Returns an array of L-1 values.
+    '''
+    def __init__(self, qubits_num: int, e0: float = 0.0, precision=None):
+        super().__init__("Electric_Field", "estimator")
+        self.qubits_num = qubits_num
+        self.e0         = e0
+        self.precision  = precision
+        
+        # Prebuild the list of L-1 operators (electric field at each lattice link)
+        self.ef_ops = buildElectricFieldOperators(qubits_num, e0)
+
+    def get_pub(self, state: QuantumCircuit) -> tuple:
+        # Send all L-1 operators in one PUB
+        return (state, self.ef_ops, None, self.precision)
+    
+    def process_pub_result(self, result: PubResult) -> np.ndarray:
+        # evs will be a numpy array with L-1 values (the field at each link)
+        evs = np.squeeze(result.data.evs).real
+        return evs
+    
+    def calculate_exact(self, state: Statevector | QuantumCircuit) -> np.ndarray:
+        ef_values = []
+        for op in self.ef_ops:
+            val = self._exactOperatorExpectation(state, op)
+            ef_values.append(val)
+            
+        return np.array(ef_values)
 
 def checkChargeSymmetry(H, e0=0):
     '''
@@ -185,7 +518,7 @@ def calculateFidelity(
         measure_circuit = state_1.copy()
 
         # Undo initial state preparation (we apply ansatz inverse)
-        # initial_state_circuit es el circuito que preparó el vacío
+        # initial_state_circuit is the circuit that prepared vacuum
         measure_circuit.compose(state_2.inverse(), inplace=True)
 
         # Measure all qubits at the end
@@ -218,7 +551,6 @@ def calculateEnergy(
     ) -> float:
     '''
     Calculate energy as the expectation value of the Hamiltonian for a given state.
-
     '''
     return calculateOperatorExpectation(state, hamiltonian, estimator, precision)
 

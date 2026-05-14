@@ -11,6 +11,8 @@ from circuitBuilder import buildCircuit, addGate
 from Operators import buildSchwingerHamiltonianTemporalGauge
 from Utils import getTimer, func_return
 from Calculations import calculateEnergy, calculateVacuumPersistence, calculateGaussLawViolation, checkChargeSymmetry, calculatePairCreation, calculateElectricField
+from Calculations import EnergyObservable, PersistenceObservable,\
+    PairCreationObservable, GaussLawViolationObservable, ElectricFieldObservable
 from Ansatzes import build_schwinger_hva, build_schwinger_hva_full, build_schwinger_hva_balanced
 from qiskit.quantum_info import SparsePauliOp, Statevector
 from qiskit.providers.fake_provider import GenericBackendV2
@@ -21,6 +23,7 @@ from qiskit.primitives import BaseEstimatorV2, BaseSamplerV2, StatevectorEstimat
 from qiskit_aer import AerSimulator
 from qiskit_aer.primitives import EstimatorV2, SamplerV2
 from qiskit_algorithms.gradients import ParamShiftEstimatorGradient
+from qiskit.transpiler.preset_passmanagers import generate_preset_pass_manager
 from scipy.optimize import minimize
 from scipy.sparse.linalg import expm_multiply
 
@@ -70,7 +73,7 @@ class SchwingerSimulation:
         # Initial state (if given, it will be used instead of optimizing for the vacuum state)
         self.initial_state = initial_state
         # Get sampler and estimator based on backend configuration if provided
-        self.estimator, self.sampler  = self.get_backend()
+        self.backend, self.estimator, self.sampler  = self.setup_quantum_primitives()
 
     def run_simulation(self):
 
@@ -101,6 +104,22 @@ class SchwingerSimulation:
         # Get ansatz from config:
         # Initial config and type
         self.ansatz = self.get_ansatz()
+
+        # ISA Transpilation for primitives V2
+        # Transpile if we use a real estimator or a simulator with backend
+        if self.estimator is not None and self.backend is not None:
+            print(f"{getTimer()} INFO: Transpiling ansatz to ISA circuit...")
+            
+            # Generate PassManager with the specified backend (AerSimulator or IBM Runtime)
+            pm = generate_preset_pass_manager(optimization_level=1, backend=self.backend)
+            
+            # Transpile ansatz to the target backend's ISA using the PassManager
+            self.ansatz = pm.run(self.ansatz)
+            
+            # When transpiling, manager can reorder physical qubits
+            # Hamiltonian topology must be adapted
+            if self.ansatz.layout is not None:
+                self.hamiltonian_prep = self.hamiltonian_prep.apply_layout(self.ansatz.layout)
 
         # Get parameters that minimize initial ansatz energy
         if self.initial_state is None:
@@ -138,50 +157,67 @@ class SchwingerSimulation:
         print(f"{getTimer()} INFO: Simulation ended.")
         print("#" * 70 + "\n")
 
-    def get_backend(self):
-        backend_config  = self.config.get("Backend", {})
-        if backend_config:
-            self.backend_type = backend_config.get("Type", "Aer")
-            backend_options   = backend_config.get("Options", {})
-        else:
+    def setup_quantum_primitives(self):
+        '''
+        Initializes and returns the Backend and the appropriate Qiskit V2 Primitives (Estimator and Sampler)
+        based on the backend configuration. Supports Aer simulators and real IBM Quantum hardware.
+        '''
+        backend_config = self.config.get("Backend", {})
+        if not backend_config:
             self.backend_type = None
-            backend_options   = {}
+            self.precision = None
+            print(f"{getTimer()} INFO: No backend specified. Evolving with direct matrix operations.")
+            return None, None, None
 
-        self.precision = backend_options.get("Precision", None)
+        self.backend_type = backend_config.get("Type", "Aer")
+        backend_options   = backend_config.get("Options", {})
+        self.precision    = backend_options.get("Precision", None)
+        shots             = backend_options.get("shots", 1024)
 
-        # Define estimator based on backend type
-        if self.backend_type is None:
-            print(f"{getTimer()} INFO: No backend specified, state is going to evolve with direct matrix gates multiplication.")
-            self.estimator = None
-            self.sampler   = None
-            return None, None
-
-        elif self.backend_type == "StatevectorEstimator":
+        if self.backend_type == "StatevectorEstimator":
             print(f"{getTimer()} INFO: Using StatevectorEstimator (Ideal V2 Primitive).")
-            self.estimator = StatevectorEstimator()
-            self.sampler   = StatevectorSampler()
-            return self.estimator, self.sampler
+            return None, StatevectorEstimator(), StatevectorSampler()
             
-        elif self.backend_type == "Aer" or self.backend_type == "AerSimulator":
-            
-            print(f"{getTimer()} INFO: Using EstimatorV2 backed by AerSimulator with options {backend_options}")
-            
-            # Aer backend instance with options (e.g. shots, noise model, etc.) defined in the configuration. This backend will be used internally by the EstimatorV2.
+        elif self.backend_type in ["Aer", "AerSimulator"]:
+            print(f"{getTimer()} INFO: Using Primitives V2 backed by AerSimulator.")
             aer_backend = AerSimulator(**backend_options)
+            aer_options = {
+                "backend_options": backend_options, # Handles noise_model, coupling_map, etc.
+                "run_options": {"shots": shots}     # Handles shots for the Estimator
+            }
+            estimator = EstimatorV2(options=aer_options)
+            sampler   = SamplerV2(options=aer_options)
+            return aer_backend, estimator, sampler
+                   
+        elif self.backend_type == "IBM_Runtime":
+            # Import inside the function to avoid dependency if not used
+            from qiskit_ibm_runtime import QiskitRuntimeService
+            from qiskit_ibm_runtime import EstimatorV2 as RuntimeEstimatorV2
+            from qiskit_ibm_runtime import SamplerV2 as RuntimeSamplerV2
             
-            # EstimatorV2 and SamplerV2 instance using the AerSimulator as backend.
-            shots = backend_options.get("shots", 1024)
-            self.estimator = EstimatorV2(backend=aer_backend, options={"default_shots": shots})
-            self.sampler   = SamplerV2(backend=aer_backend, options={"default_shots": shots}) # Crea el sampler
+            print(f"{getTimer()} INFO: Connecting to IBM Qiskit Runtime Service...")
+            service = QiskitRuntimeService()
             
-            return self.estimator, self.sampler
-        
+            target_hardware = backend_config.get("Hardware_Name", "least_busy")
+            if target_hardware == "least_busy":
+                backend = service.least_busy(operational=True, simulator=False)
+            else:
+                backend = service.backend(target_hardware)
+                
+            print(f"{getTimer()} INFO: Target hardware selected: {backend.name}")
+            
+            estimator = RuntimeEstimatorV2(mode=backend)
+            sampler   = RuntimeSamplerV2(mode=backend)
+            
+            # Apply resilience levels if specified
+            estimator.options.resilience_level = backend_options.get("resilience_level", 1)
+            
+            return backend, estimator, sampler
+            
         else:
-            print(f"{getTimer()} WARNING: Backend type {self.backend_type} not implemented, reverting to direct matrix multiplication.")
-            self.estimator = None
-            self.sampler   = None
-            return None, None
-
+            print(f"{getTimer()} WARNING: Backend type {self.backend_type} not recognized. Reverting to exact multiplication.")
+            return None, None, None
+        
     def get_hamiltonian(self,
                         override_params: dict | None =None):
         '''
@@ -394,16 +430,53 @@ class SchwingerSimulation:
             try:    pbar.update(1)
             except: pass
 
-        max_iter = final_options.get('maxiter', 2000)        
+        max_iter = final_options.get('maxiter', 2000)
+        # Initiate energy observable for callback access (needs to be after estimator is defined)
+        self._energy_cost = EnergyObservable(self.hamiltonian_prep, self.precision)
         vqe_start = time.time()
-        with tqdm(total=max_iter, desc="VQE Optimization", unit="iter", file=sys.stdout, leave=True, dynamic_ncols=False) as pbar:
-            result = minimize(self.energy_cost_function, initial_state_params, **minimize_params,
-                            callback=callback)
-            # Update bar to show actual iterations
-            if hasattr(result, 'nit'):
-                pbar.total = result.nit
-                pbar.n = result.nit
-                pbar.refresh()
+        # Run VQE 
+        # If backend is IBM Runtime, we need to open a session
+        # and use the session estimator for the optimization,
+        # then restore the original estimator for the rest of the simulation.
+        # This is because the RuntimeEstimator needs to be used within a session context
+        # to work properly, and we want to keep the session open
+        # only for the duration of the VQE optimization to avoid unnecessary costs and resource usage.
+        # Session is used to avoid making a single call (and wait) for every energy measurement
+        if self.backend_type == "IBM_Runtime":
+            # Import inside the function to avoid dependency if not used
+            from qiskit_ibm_runtime import Session
+            from qiskit_ibm_runtime import EstimatorV2 as RuntimeEstimatorV2
+            
+            print(f"{getTimer()} INFO: Opening IBM Runtime Session for VQE optimization...")
+            # Open exclusive VQE session
+            with Session(backend=self.backend) as session:
+                # New estimator for this session
+                session_estimator = RuntimeEstimatorV2(mode=session)
+                session_estimator.options.resilience_level = self.estimator.options.resilience_level
+                
+                # We change the original estimator so the Session uses the one associated with it
+                original_estimator = self.estimator
+                self.estimator     = session_estimator
+                
+                # Launch VQE
+                with tqdm(total=max_iter, desc="VQE Optimization (Session)", unit="iter", file=sys.stdout) as pbar:
+                    result = minimize(self.energy_cost_function, initial_state_params, **minimize_params, callback=callback)
+                    if hasattr(result, 'nit'):
+                        pbar.total = pbar.n = result.nit
+                        pbar.refresh()
+                        
+                # Get back original estimator for the rest of the simulation
+                self.estimator = original_estimator
+                print(f"{getTimer()} INFO: IBM Runtime Session closed successfully.")
+        else:
+            with tqdm(total=max_iter, desc="VQE Optimization", unit="iter", file=sys.stdout, leave=True, dynamic_ncols=False) as pbar:
+                result = minimize(self.energy_cost_function, initial_state_params, **minimize_params,
+                                callback=callback)
+                # Update bar to show actual iterations
+                if hasattr(result, 'nit'):
+                    pbar.total = result.nit
+                    pbar.n = result.nit
+                    pbar.refresh()
 
         self.vqe_duration = time.time() - vqe_start
         self.vqe_iters    = result.nit if hasattr(result, 'nit') else None
@@ -431,11 +504,12 @@ class SchwingerSimulation:
         given self.hamiltonian_prep and self.ansatz.
         '''
         ansatz_circuit = self.ansatz.assign_parameters(params)
-        return calculateEnergy(
-            ansatz_circuit, self.hamiltonian_prep,
-            getattr(self, 'estimator', None),
-            getattr(self, 'precision', None)
-        )
+        if hasattr(self, 'estimator') and self.estimator is not None:
+            pub = self._energy_cost.get_pub(ansatz_circuit)
+            result = self.estimator.run([pub]).result()
+            return self._energy_cost.process_pub_result(result[0])
+        else:
+            return self._energy_cost.calculate_exact(ansatz_circuit)
     
     def gradient_cost_function(self, params: Mapping | Iterable):
         '''
@@ -523,7 +597,27 @@ class SchwingerSimulation:
         else:
             state = self.initial_state.copy()
             initial_state = state.copy()
+            estimator_pubs = {"pubs": [], "info": []}
+            sampler_pubs   = {"pubs": [], "info": []}
         
+        if self.estimator is not None:
+            # Construct Trotter circuit to compose
+            trotter_step_circuit = QuantumCircuit(self.qubits_num)
+            trotter_step_circuit.append(evolution_gate, range(self.qubits_num))
+            
+            if self.backend is not None and self.backend_type not in ["StatevectorEstimator", None]:
+                
+                print(f"{getTimer()} INFO: Transpiling Trotter step to ISA...")
+                
+                # Force PassManager to use same physical layout than VQE
+                layout = self.initial_state.layout if hasattr(self.initial_state, 'layout') else None
+                pm_trotter = generate_preset_pass_manager(optimization_level=1, backend=self.backend, initial_layout=layout)
+                
+                trotter_step_circuit = pm_trotter.run(trotter_step_circuit)
+            else:
+                # Ideal simulators
+                trotter_step_circuit = trotter_step_circuit.decompose().decompose()
+
         # Define evolution method for null backend
         evolution_method = evolution_params.get("Evolution_Method", "MatrixExponential")
 
@@ -535,29 +629,24 @@ class SchwingerSimulation:
         observables        = evolution_params.get("Observables", {})
         observables_list   = observables.get("Observables_List", [])
         observables_params = observables.get("Observables_Params", {})
+        observables_objects = self._initiate_observables(observables_list, observables_params)
         observables_data   = {obs: [] for obs in observables_list}
-        if "Pair_Creation" in observables_list:
-            observables_data["Pair_Creation_electron"] = []
-            observables_data["Pair_Creation_positron"] = []
-            observables_data["Pair_Creation_balance"]  = []
-            del observables_data["Pair_Creation"]
 
         # Iterate over time steps
         with tqdm(range(time_steps), desc="Evolving state", unit="step", file=sys.stdout, leave=True, dynamic_ncols=False) as pbar:
-            for t in pbar:
-                for obs in observables_list:
-                    spec_params = observables_params.get(obs, None)
-                    value = self.calculate_observable(obs, state, initial_state,
-                                                      spec_params=spec_params,
-                                                      estimator=self.estimator, precision=self.precision,
-                                                      sampler=self.sampler)
-                    if obs == "Pair_Creation":
-                        n_e, n_p = value
-                        observables_data[f"{obs}_electron"].append(n_e)
-                        observables_data[f"{obs}_positron"].append(n_p)
-                        observables_data[f"{obs}_balance"].append(n_e - n_p)
+            for t in pbar: # Time iteration
+                for obs in observables_objects:
+                    if self.estimator is None:
+                        value = obs.calculate_exact(state)
+                        observables_data[obs.name].append(value)
                     else:
-                        observables_data[obs].append(value)
+                        pub = obs.get_pub(state)
+                        if obs.primitive_type == "estimator":
+                            estimator_pubs["pubs"] += [pub]
+                            estimator_pubs["info"] += [obs]
+                        elif obs.primitive_type == "sampler":
+                            sampler_pubs["pubs"]   += [pub]
+                            sampler_pubs["info"]   += [obs]
 
                 # Evolve state
                 if self.estimator is None:
@@ -569,14 +658,31 @@ class SchwingerSimulation:
                         # Default: use gate evolution (slower but exact)
                         state = state.evolve(evolution_gate)
                 else:
-                    state.append(evolution_gate, range(self.qubits_num))
-
+                    state.compose(trotter_step_circuit, range(self.qubits_num))
+        
+        # Process PUBS results if using estimator/sampler
+        if self.estimator is not None:
+            print(f"{getTimer()} INFO: Running {len(estimator_pubs['pubs'])} Estimator PUBS...")
+            res_est = self.estimator.run(estimator_pubs['pubs']).result()
+            for result, obs_obj in zip(res_est, estimator_pubs['info']):
+                observables_data[obs_obj.name].append(obs_obj.process_pub_result(result))
+                
+            if sampler_pubs["pubs"]:
+                print(f"{getTimer()} INFO: Running {len(sampler_pubs['pubs'])} Sampler PUBS...")
+                res_samp = self.sampler.run(sampler_pubs['pubs']).result()
+                for result, obs_obj in zip(res_samp, sampler_pubs['info']):
+                    observables_data[obs_obj.name].append(obs_obj.process_pub_result(result))
+        
+        # Convert observables data to DataFrame
         time_array = np.linspace(0, total_time, time_steps)
         observables_dataframe = pd.DataFrame.from_records(observables_data, index=time_array)
         observables_dataframe.index.name = "Time"
 
+        # Unpack columns that come as tuple/array
+        observables_dataframe = self.unpack_columns(observables_dataframe)
         return state, observables_dataframe
-    
+
+
     def calculate_observable(self, observable: str,
                              state: Statevector | QuantumCircuit,
                              initial_state: Statevector | QuantumCircuit | None = None,
@@ -610,4 +716,67 @@ class SchwingerSimulation:
             value = None
         
         return value
+    
+    def _initiate_observables(self, observables_list: list, observables_params: dict | None = None) -> list:
+        '''
+        Initiates the BaseObservable objects of the simulation from the list observables_list.
+        '''
+        active_observables = []
+        if observables_params is None: observables_params = {}
+        for obs_name in observables_list:
+            spec_params = observables_params.get(obs_name, {})
+            
+            if obs_name == "Energy":
+                obs = EnergyObservable(self.hamiltonian_evol, self.precision)
+            
+            elif obs_name == "Persistence":
+                # Needs initial state
+                obs = PersistenceObservable(self.initial_state, self.qubits_num)
+                
+            elif obs_name == "Pair_Creation":
+                obs = PairCreationObservable(self.qubits_num, self.precision)
+                
+            elif obs_name == "Gauss_Law_Violation":
+                obs = GaussLawViolationObservable(self.qubits_num, self.precision)
+                
+            elif obs_name == "Electric_Field":
+                # Needs e0 from quench
+                obs = ElectricFieldObservable(self.qubits_num, self.e0, self.precision)
+                
+            else:
+                print(f"WARNING: Observable {obs_name} not implemented...")
+                continue
+                
+            active_observables.append(obs)
+            
+        return active_observables
+    
+    def unpack_columns(self,
+                       observables_dataframe: pd.DataFrame,
+                       drop_original: bool = False) -> pd.DataFrame:
+        '''
+        Create new columns in the observables dataframe for columns that come as tuples or arrays,
+        such as "Pair_Creation" or "Electric_Field", for better visualization and analysis.
+        If drop_original is True, the original columns with tuples/arrays are dropped after unpacking.
+        '''
+        if "Pair_Creation" in observables_dataframe.columns:
+            # Two columns, electrons and positrons
+            df_pairs = pd.DataFrame(observables_dataframe["Pair_Creation"].tolist(), index=observables_dataframe.index)
+            observables_dataframe["Pair_Creation_electrons"] = df_pairs[0]
+            observables_dataframe["Pair_Creation_positrons"] = df_pairs[1]
+            observables_dataframe["Pair_Creation_balance"]   = df_pairs[0] - df_pairs[1]
+            if drop_original: observables_dataframe.drop(columns=["Pair_Creation"], inplace=True)
+            
+        if "Electric_Field" in observables_dataframe.columns:
+            # Column with arrays, to L-1 individual columns
+            df_ef = pd.DataFrame(observables_dataframe["Electric_Field"].tolist(), index=observables_dataframe.index)
+            # Name as E_link_0, E_link_1, etc.
+            ef_col_names = [f"E_link_{i}" for i in range(df_ef.shape[1])]
+            df_ef.columns = ef_col_names
+            
+            # Concatenate with original dataframe and drop original column
+            observables_dataframe = pd.concat([observables_dataframe, df_ef], axis=1)
+            if drop_original: observables_dataframe.drop(columns=["Electric_Field"], inplace=True)
+
+        return observables_dataframe
     

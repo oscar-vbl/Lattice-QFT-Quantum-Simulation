@@ -60,6 +60,60 @@ def test_full_simulation_pipeline_smoke_test():
     assert len(sim.evolution_data) == time_steps, f"Must have {time_steps} rows (t=0 + {time_steps-1} time steps)."
     assert "Persistence" in sim.evolution_data.columns
 
+def test_full_simulation_pipeline_aer():
+    """Validates that a full simulation pipeline runs with Aer backend without throwing exceptions."""
+    time_steps = 10
+    test_config = {
+        "QubitsNumber": 4, # Small
+        "Hamiltonian": {
+            "Type": "Schwinger", "Gauge": "Temporal",
+            "Parameters": {"L": 4, "a": 0.5, "m": 0.1, "e0": 0.0}
+        },
+        "Backend": {"Type": "Aer"},
+        "Ansatz": {
+            "Type": "ExcitationPreserving", "Reps": 1,
+            "Minimizer": {
+                "Method": "L-BFGS-B",
+                "Options": {
+                    "maxiter": 100,
+                    "ftol": 1e-5
+                }
+            },
+        },
+        "Temporal Evolution": {
+            "Active": True,
+            "Time_Steps": time_steps,
+            "Total_Time": 10,
+            "Quench": {
+                "Active": True,
+                "Parameters_to_Change": {
+                    "e0": 0.5
+                }
+            },
+            "Evolution_Gate": {
+                "Type": "Pauli",
+                "Synthesis": "TrotterSuzuki",
+                "Synthesis_Params": {"order": 2}
+            },
+            "Evolution_Method": "MatrixExponential",
+            "Observables": {
+                "Observables_List": ["Energy", "Persistence", "Pair_Creation"],
+                "Observables_Params": {
+                    "Energy": {},
+                    "Persistence": {}
+                }
+            }
+        }
+    }
+    
+    sim = SchwingerSimulation(test_config)
+    sim.run_simulation()
+    
+    # Check results have been stored
+    assert sim.evolution_data is not None, "DataFrame of results was not created."
+    assert len(sim.evolution_data) == time_steps, f"Must have {time_steps} rows (t=0 + {time_steps-1} time steps)."
+    assert "Persistence" in sim.evolution_data.columns
+
 def test_full_simulation_ground_state():
     """Validates that a full simulation pipeline runs without throwing exceptions,
     and compares the overlap of the simulated and numerical ground state."""
@@ -174,6 +228,9 @@ def test_sampler_vacuum_persistence():
 if __name__ == "__main__":
     test_full_simulation_pipeline_smoke_test()
     print("test_full_simulation_pipeline_smoke_test passed.")
+    
+    test_full_simulation_pipeline_aer()
+    print("test_full_simulation_pipeline_aer passed.")
     
     test_full_simulation_ground_state()
     print("test_full_simulation_ground_state passed.")
