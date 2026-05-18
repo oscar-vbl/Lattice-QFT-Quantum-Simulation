@@ -57,7 +57,7 @@ def test_full_simulation_pipeline_smoke_test():
     
     # Check results have been stored
     assert sim.evolution_data is not None, "DataFrame of results was not created."
-    assert len(sim.evolution_data) == time_steps, f"Must have {time_steps} rows (t=0 + {time_steps-1} time steps)."
+    assert len(sim.evolution_data) == time_steps + 1, f"Must have {time_steps + 1} rows (t=0 + {time_steps-1} time steps)."
     assert "Persistence" in sim.evolution_data.columns
 
 def test_full_simulation_pipeline_aer():
@@ -111,8 +111,66 @@ def test_full_simulation_pipeline_aer():
     
     # Check results have been stored
     assert sim.evolution_data is not None, "DataFrame of results was not created."
-    assert len(sim.evolution_data) == time_steps, f"Must have {time_steps} rows (t=0 + {time_steps-1} time steps)."
+    assert len(sim.evolution_data) == time_steps + 1, f"Must have {time_steps + 1} rows (t=0 + {time_steps-1} time steps)."
     assert "Persistence" in sim.evolution_data.columns
+
+
+def test_full_simulation_pipeline_trotter():
+    """Validates that a full simulation pipeline runs without throwing exceptions,
+    applying mitigation with two different Trotter steps."""
+    time_steps = 10
+    test_config = {
+        "QubitsNumber": 4, # Small
+        "Hamiltonian": {
+            "Type": "Schwinger", "Gauge": "Temporal",
+            "Parameters": {"L": 4, "a": 0.5, "m": 0.1, "e0": 0.0}
+        },
+        "Backend": {"Type": "StatevectorEstimator"},
+        "Ansatz": {
+            "Type": "ExcitationPreserving", "Reps": 1,
+            "Minimizer": {"Method": "COBYLA", "Options": {"maxiter": 2}} # Only 2 iters
+        },
+        "Temporal Evolution": {
+            "Active": True,
+            "Time_Steps": time_steps,
+            "Total_Time": 10,
+            "Quench": {
+                "Active": True,
+                "Parameters_to_Change": {
+                    "e0": 0.5
+                }
+            },
+            "Evolution_Gate": {
+                "Type": "Pauli",
+                "Synthesis": "TrotterSuzuki",
+                "Synthesis_Params": {"order": 2}
+            },
+            "Evolution_Method": "MatrixExponential",
+            "Trotter_Steps": {
+                "dt":      {"step_multiplier": 1.0},
+                "dt_half": {"step_multiplier": 0.5}
+            },
+            "Algorithmic_Mitigation": {
+                "Apply": True
+            },
+            "Observables": {
+                "Observables_List": ["Energy", "Persistence", "Pair_Creation"],
+                "Observables_Params": {
+                    "Energy": {},
+                    "Persistence": {}
+                }
+            }
+        }
+    }
+    
+    sim = SchwingerSimulation(test_config)
+    sim.run_simulation()
+    
+    # Check results have been stored
+    assert sim.evolution_data is not None, "DataFrame of results was not created."
+    assert len(sim.evolution_data) == time_steps + 1, f"Must have {time_steps + 1} rows (t=0 + {time_steps-1} time steps)."
+    assert "Persistence" in sim.evolution_data.columns
+
 
 def test_full_simulation_ground_state():
     """Validates that a full simulation pipeline runs without throwing exceptions,
@@ -231,6 +289,9 @@ if __name__ == "__main__":
     
     test_full_simulation_pipeline_aer()
     print("test_full_simulation_pipeline_aer passed.")
+    
+    test_full_simulation_pipeline_trotter()
+    print("test_full_simulation_pipeline_trotter passed.")
     
     test_full_simulation_ground_state()
     print("test_full_simulation_ground_state passed.")

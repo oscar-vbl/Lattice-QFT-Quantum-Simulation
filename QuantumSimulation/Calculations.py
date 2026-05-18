@@ -384,6 +384,8 @@ def calculateOperatorExpectation(
         estimator: BaseEstimatorV2 | None = None,
         precision: float | None = None) -> float:
     '''
+    [DEPRECATED] Use BaseObservable methods instead.
+
     Calculate the expectation value of an operator for a given state.
 
     '''
@@ -407,6 +409,8 @@ def calculateAmplitude(
         sampler: BaseSamplerV2 | None = None
     ) -> complex:
     '''
+    [DEPRECATED] Use BaseObservable methods instead.
+
     Calculate probability amplitude <target_state | state> as complex number.
     
     If Sampler is given, the interferometry Hadamard test is applied,
@@ -501,6 +505,8 @@ def calculateFidelity(
         sampler: BaseSamplerV2 | None = None
     ) -> float:
     '''
+    [DEPRECATED] Use BaseObservable methods instead.
+
     Calculate fidelity of two given states.
     '''
     if sampler is None:
@@ -550,6 +556,8 @@ def calculateEnergy(
         precision: float | None = None
     ) -> float:
     '''
+    [DEPRECATED] Use EnergyObservable instead.
+    
     Calculate energy as the expectation value of the Hamiltonian for a given state.
     '''
     return calculateOperatorExpectation(state, hamiltonian, estimator, precision)
@@ -560,6 +568,8 @@ def calculateVacuumPersistence(
         sampler: BaseSamplerV2 | None = None
     ) -> float:
     '''
+    [DEPRECATED] Use PersistenceObservable instead.
+
     Calculate vacuum persistence as the fidelity of a given state and the initial vacuum state.
     '''
     return calculateFidelity(state, initial_state, sampler)
@@ -571,6 +581,8 @@ def calculateGaussLawViolation(
         precision: float | None = None
     ) -> float:
     '''
+    [DEPRECATED] Use GaussLawViolationObservable instead.
+
     Check violation of Gauss' law as sum of the expectation value of the Gauss operator G_n
     of all the sites on the lattice. It should be 0 (or almost).
     '''
@@ -588,6 +600,8 @@ def calculatePairCreation(
         precision: float | None = None
     ) -> tuple[float, float]:
     '''
+    [DEPRECATED] Use PairCreationObservable instead.
+
     Calculate the number of pairs created as the sum of the occupation numbers of all sites.
     The occupation number of a site is calculated as n_occ = (1 + <Z>) / 2,
     where <Z> is the expectation value of the Z operator on that site.
@@ -608,6 +622,8 @@ def calculateElectricField(
         precision: float | None = None
     ) -> np.array:
     '''
+    [DEPRECATED] Use ElectricFieldObservable instead.
+
     Calculate the electric field at each link as E(n) = E_0 + sum_{k=0..n} Q_k, where Q_k is the charge operator at site k. Returns a list of the electric field at each link.
     '''
     #TODO: Implement efficiently and add estimator support

@@ -4,6 +4,7 @@ import sys
 import numpy as np
 import pandas as pd
 import time
+import copy
 from typing import Callable, Any, Mapping, Iterable
 from tqdm.auto import tqdm
 from qiskit.circuit.quantumcircuit import QuantumCircuit
@@ -150,7 +151,7 @@ class SchwingerSimulation:
         ####################
 
         if self.config.get("Temporal Evolution", {}).get("Active", False):
-            self.final_state, self.evolution_data = self.evolve_state()
+            self.final_state, self.evolution_data, self.all_trotter_evolution_data = self.evolve_state()
 
         # Additional results and calculations (not developed in this module)
         # Check Results for results examples
@@ -547,7 +548,9 @@ class SchwingerSimulation:
         Returns: 
          - state: Statevector of the final state of the evolution.
 
-         - observables_dataframe: DataFrame with time values of the evolution as index and columns the observables given in the list in the configuration
+         - observables_dataframe: DataFrame with time values of the evolution as index and columns the observables given in the list in the configuration for the best Trotter configuration.
+
+         - trotter_evolution_data: dict with the evolution data for each Trotter configuration if "Trotter_Steps" is given in the configuration
         '''
 
         # Assert needed variables are defined
@@ -588,7 +591,6 @@ class SchwingerSimulation:
             self.hamiltonian_evol = self.hamiltonian_prep
             self.e0 = self.config["Hamiltonian"]["Parameters"].get("e0", 0)
         
-        evolution_gate = gate(self.hamiltonian_evol, time=step, synthesis=synthesis(**synthesis_params))
         
         # Define initial state
         if self.estimator is None:
@@ -597,26 +599,51 @@ class SchwingerSimulation:
         else:
             state = self.initial_state.copy()
             initial_state = state.copy()
-            estimator_pubs = {"pubs": [], "info": []}
-            sampler_pubs   = {"pubs": [], "info": []}
-        
-        if self.estimator is not None:
-            # Construct Trotter circuit to compose
-            trotter_step_circuit = QuantumCircuit(self.qubits_num)
-            trotter_step_circuit.append(evolution_gate, range(self.qubits_num))
+            estimator_pubs = {"pubs": [], "info": [], "trotter_key": []}
+            sampler_pubs   = {"pubs": [], "info": [], "trotter_key": []}
+
+        # Get Trotter configurations if defined for different time steps
+        trotter_configs = evolution_params.get("Trotter_Steps", None)
+        if not trotter_configs: trotter_configs = {"dt": {"step_multiplier": 1.0}}
+        trotter_circuits = {}
+        states = {}
+
+        for key, t_conf in trotter_configs.items():
+            multiplier        = t_conf.get("step_multiplier", 1.0)
+            current_time_step = step * multiplier
+            evolution_gate    = gate(self.hamiltonian_evol, time=current_time_step,
+                                     synthesis=synthesis(**synthesis_params))
             
-            if self.backend is not None and self.backend_type not in ["StatevectorEstimator", None]:
+            # Construct Trotter circuit to compose
+            if self.estimator is not None:
+                trotter_step_circuit = QuantumCircuit(self.qubits_num)
+                trotter_step_circuit.append(evolution_gate, range(self.qubits_num))
                 
-                print(f"{getTimer()} INFO: Transpiling Trotter step to ISA...")
-                
-                # Force PassManager to use same physical layout than VQE
-                layout = self.initial_state.layout if hasattr(self.initial_state, 'layout') else None
-                pm_trotter = generate_preset_pass_manager(optimization_level=1, backend=self.backend, initial_layout=layout)
-                
-                trotter_step_circuit = pm_trotter.run(trotter_step_circuit)
+                if self.backend is not None and self.backend_type not in ["StatevectorEstimator", None]:
+                    
+                    print(f"{getTimer()} INFO: Transpiling Trotter step to ISA...")
+                    
+                    # Force PassManager to use same physical layout than VQE
+                    layout = self.initial_state.layout if hasattr(self.initial_state, 'layout') else None
+                    pm_trotter = generate_preset_pass_manager(optimization_level=1, backend=self.backend, initial_layout=layout)
+                    
+                    trotter_circuits[key] = pm_trotter.run(trotter_step_circuit)
+                else:
+                    # Ideal simulators
+                    # Use twice decompose to ensure we get down to basic gates for the estimator/sampler
+                    # PauliEvolutionGate has 2 levels of abstraction
+                    # We first decompose into single exponential gates, then decompose those into basic gates
+                    trotter_circuits[key] = trotter_step_circuit.decompose().decompose()
             else:
-                # Ideal simulators
-                trotter_step_circuit = trotter_step_circuit.decompose().decompose()
+                # Ideal evolution without primitives
+                # Use twice decompose to ensure we get down to basic gates
+                # PauliEvolutionGate has 2 levels of abstraction
+                # We first decompose into single exponential gates, then decompose those into basic gates
+                trotter_circuits[key] = trotter_step_circuit.decompose().decompose()
+            
+            # Initialize states for each Trotter configuration
+            states[key] = state.copy()
+
 
         # Define evolution method for null backend
         evolution_method = evolution_params.get("Evolution_Method", "MatrixExponential")
@@ -624,100 +651,115 @@ class SchwingerSimulation:
         # Prepare evolution data structures according to backend
         if evolution_method == "MatrixExponential":
             sparse_ham = self.hamiltonian_evol.to_matrix(sparse=True)
-            state_data = initial_state.data.copy()
 
+        # Observables config dict
         observables        = evolution_params.get("Observables", {})
+        # List of all observables
         observables_list   = observables.get("Observables_List", [])
+        # Dict with spec parameters for observables {"obs": {"param1": value1, ...}, ...}
         observables_params = observables.get("Observables_Params", {})
+        # Initialization of observable object of type BaseObservable
         observables_objects = self._initiate_observables(observables_list, observables_params)
+        # Data structures to store observables data during evolution
         observables_data   = {obs: [] for obs in observables_list}
-
+        observables_raw_data = {
+            key: {obs.name: [] for obs in observables_objects} 
+            for key in trotter_configs.keys()
+        }
         # Iterate over time steps
-        with tqdm(range(time_steps), desc="Evolving state", unit="step", file=sys.stdout, leave=True, dynamic_ncols=False) as pbar:
+        with tqdm(range(time_steps + 1), desc="Evolving state", unit="step", file=sys.stdout, leave=True, dynamic_ncols=False) as pbar:
             for t in pbar: # Time iteration
-                for obs in observables_objects:
-                    if self.estimator is None:
-                        value = obs.calculate_exact(state)
-                        observables_data[obs.name].append(value)
-                    else:
-                        pub = obs.get_pub(state)
-                        if obs.primitive_type == "estimator":
-                            estimator_pubs["pubs"] += [pub]
-                            estimator_pubs["info"] += [obs]
-                        elif obs.primitive_type == "sampler":
-                            sampler_pubs["pubs"]   += [pub]
-                            sampler_pubs["info"]   += [obs]
+                for trotter_key, state in list(states.items()):
+                    # Calculate observables for current state
+                    for obs in observables_objects:
+                        if self.estimator is None:
+                            value = obs.calculate_exact(state)
+                            observables_raw_data[trotter_key][obs.name].append(value)
+                        else:
+                            pub = obs.get_pub(state)
+                            if obs.primitive_type == "estimator":
+                                estimator_pubs["pubs"]        += [pub]
+                                estimator_pubs["info"]        += [obs]
+                                estimator_pubs["trotter_key"] += [trotter_key]
+                            elif obs.primitive_type == "sampler":
+                                sampler_pubs["pubs"]        += [pub]
+                                sampler_pubs["info"]        += [obs]
+                                sampler_pubs["trotter_key"] += [trotter_key]
 
-                # Evolve state
-                if self.estimator is None:
-                    # Evolve state directly (no Aer backend)
-                    if evolution_method == "MatrixExponential":
-                        state_data = expm_multiply(-1j * sparse_ham * step, state_data)
-                        state = Statevector(state_data)
-                    else:
-                        # Default: use gate evolution (slower but exact)
-                        state = state.evolve(evolution_gate)
-                else:
-                    state.compose(trotter_step_circuit, range(self.qubits_num))
+                    # Evolve state
+                    if t < time_steps: # No need to evolve at the last step
+                        multiplier = trotter_configs[trotter_key].get("step_multiplier", 1.0)
+                        num_applications = int(1 / multiplier)
+                        trotter_step = step * multiplier
+                        for _ in range(num_applications):
+                            if self.estimator is None:
+                                # Evolve state directly (no Aer backend)
+                                if evolution_method == "MatrixExponential":
+                                    state_data = expm_multiply(-1j * sparse_ham * trotter_step, state.data)
+                                    state = Statevector(state_data)
+                                else:
+                                    # Default: use gate evolution (slower but exact)
+                                    state = state.evolve(trotter_circuits[trotter_key])
+                            else:
+                                state.compose(trotter_circuits[trotter_key], range(self.qubits_num), inplace=True)
+                        
+                        # Set evolved state for next Trotter step
+                        states[trotter_key] = state
         
         # Process PUBS results if using estimator/sampler
         if self.estimator is not None:
             print(f"{getTimer()} INFO: Running {len(estimator_pubs['pubs'])} Estimator PUBS...")
             res_est = self.estimator.run(estimator_pubs['pubs']).result()
-            for result, obs_obj in zip(res_est, estimator_pubs['info']):
-                observables_data[obs_obj.name].append(obs_obj.process_pub_result(result))
+            for result, obs_obj, trotter_key in zip(res_est, estimator_pubs['info'], estimator_pubs['trotter_key']):
+                observables_raw_data[trotter_key][obs_obj.name].append(obs_obj.process_pub_result(result))
                 
             if sampler_pubs["pubs"]:
                 print(f"{getTimer()} INFO: Running {len(sampler_pubs['pubs'])} Sampler PUBS...")
                 res_samp = self.sampler.run(sampler_pubs['pubs']).result()
-                for result, obs_obj in zip(res_samp, sampler_pubs['info']):
-                    observables_data[obs_obj.name].append(obs_obj.process_pub_result(result))
+                for result, obs_obj, trotter_key in zip(res_samp, sampler_pubs['info'], sampler_pubs['trotter_key']):
+                    observables_raw_data[trotter_key][obs_obj.name].append(obs_obj.process_pub_result(result))
         
-        # Convert observables data to DataFrame
-        time_array = np.linspace(0, total_time, time_steps)
-        observables_dataframe = pd.DataFrame.from_records(observables_data, index=time_array)
-        observables_dataframe.index.name = "Time"
+        # Dict to store DataFrames for each Trotter configuration
+        self.all_trotter_evolution_data = {}
+        time_array = np.linspace(0, total_time, time_steps + 1)
+        for key, data_dict in observables_raw_data.items():
+            df = pd.DataFrame.from_records(data_dict, index=time_array)
+            df.index.name = "Time"
+            # Unpack tuples/arrays in columns if needed and drop original columns
+            self.all_trotter_evolution_data[key] = self.unpack_columns(df, drop_original=True)      
 
-        # Unpack columns that come as tuple/array
-        observables_dataframe = self.unpack_columns(observables_dataframe)
-        return state, observables_dataframe
-
-
-    def calculate_observable(self, observable: str,
-                             state: Statevector | QuantumCircuit,
-                             initial_state: Statevector | QuantumCircuit | None = None,
-                             spec_params: Mapping | None = None,
-                             estimator: BaseEstimatorV2 | None = None,
-                             sampler: BaseSamplerV2 | None = None,
-                             precision: float | None = None
-                             ):
-        '''
-        Calculate the expectation value of a given observable.
-        
-        Parameters:
-        - observable: str, name of the observable to calculate (e.g. "Energy", "Persistence", "Gauss_Law_Violation", "Pair_Creation").
-        - state: Statevector, the state for which to calculate the observable.
-        - initial_state: optional (default: None), Statevector, the initial state of the system (used for some observables like Persistence).
-        - spec_params: optional (default: None), Mapping, specific parameters for the observable calculation if needed.
-        '''
-        
-        if observable == "Energy":
-            value = calculateEnergy(state, self.hamiltonian_evol, estimator, precision)
-        elif observable == "Persistence":
-            value = calculateVacuumPersistence(state, initial_state, sampler)
-        elif observable == "Gauss_Law_Violation":
-            value = calculateGaussLawViolation(state, self.qubits_num, estimator, precision)
-        elif observable == "Pair_Creation":
-            value = calculatePairCreation(state, self.qubits_num, estimator, precision)
-        elif observable == "Electric_Field":
-            value = calculateElectricField(state, self.qubits_num, self.e0, estimator, precision)
+        # Apply mitigation if specified
+        apply_algorithmic_mitigation = evolution_params.get("Algorithmic_Mitigation", {}).get("Apply", False)
+        if apply_algorithmic_mitigation and len(trotter_configs) > 1:
+            # Get Trotter order (Qiskit default is 2)
+            trotter_order = synthesis_params.get("order", 2)
+            print(f"{getTimer()} INFO: Applying Richardson Extrapolation with Trotter order {trotter_order}...")        
+            # We need at least 2 different time steps to apply Richardson extrapolation
+            coarse_key = max(trotter_configs.keys(), key=lambda k: trotter_configs[k].get("step_multiplier", 1.0))
+            fine_key   = min(trotter_configs.keys(), key=lambda k: trotter_configs[k].get("step_multiplier", 1.0))
+            mitigated_data = self.apply_richardson_extrapolation(self.all_trotter_evolution_data[coarse_key],
+                                                                self.all_trotter_evolution_data[fine_key],
+                                                                step_mult_coarse=trotter_configs[coarse_key].get("step_multiplier", 1.0),
+                                                                step_mult_fine=trotter_configs[fine_key].get("step_multiplier", 1.0),
+                                                                trotter_order=trotter_order)            
+            self.all_trotter_evolution_data["mitigated"] = mitigated_data
+            preferential_key = "mitigated"
+            state = states[fine_key] # The state evolved with the finest time step is the closest to the mitigated data
         else:
-            print(f"{getTimer()} WARNING: Observable {observable} not implemented...")
-            value = None
-        
-        return value
-    
-    def _initiate_observables(self, observables_list: list, observables_params: dict | None = None) -> list:
+            # Set one variable as the main observables dataframe
+            preferential_key = evolution_params.get("Preferential_Trotter", None)
+            if preferential_key is None:
+                preferential_key = min(trotter_configs.keys(), key=lambda k: trotter_configs[k].get("step_multiplier", 1.0))
+            state = states[preferential_key]
+
+        self.observables_dataframe = self.all_trotter_evolution_data[preferential_key]
+
+        return state, self.observables_dataframe, self.all_trotter_evolution_data
+
+
+    def _initiate_observables(self,
+                              observables_list: list,
+                              observables_params: dict | None = None) -> list:
         '''
         Initiates the BaseObservable objects of the simulation from the list observables_list.
         '''
@@ -779,4 +821,67 @@ class SchwingerSimulation:
             if drop_original: observables_dataframe.drop(columns=["Electric_Field"], inplace=True)
 
         return observables_dataframe
+    
+    def apply_richardson_extrapolation(self, 
+                                       df_coarse: pd.DataFrame, 
+                                       df_fine: pd.DataFrame,
+                                       step_mult_coarse: float, 
+                                       step_mult_fine: float,
+                                       trotter_order: int) -> pd.DataFrame:
+        '''
+        Applies Richardson Extrapolation to mitigate Trotter errors in the observables dataframes,
+        based on the algorithmic order and the ratio between the time steps.
+        
+        Parameters:
+        - df_coarse: DataFrame evaluated with the larger time step.
+        - df_fine: DataFrame evaluated with the smaller time step.
+        - step_mult_coarse: Multiplier for the large time step (e.g., 1.0 for dt).
+        - step_mult_fine: Multiplier for the small time step (e.g., 0.5 for dt/2 or 0.25 for dt/4).
+        - trotter_order: Order of the Suzuki-Trotter algorithm (typically 1, 2 or 4).
+        '''
+        # r is the ratio between the large and small time steps (e.g., 1.0 / 0.5 = 2.0)
+        r = step_mult_coarse / step_mult_fine
+        
+        # Scale factor for the error based on the algorithmic order of Trotter (r^p)
+        factor = r ** trotter_order
+        
+        # Generic formula for Richardson Extrapolation
+        df_mitigated = (factor * df_fine - df_coarse) / (factor - 1)
+        
+        return df_mitigated    
+    
+    def calculate_observable(self, observable: str,
+                             state: Statevector | QuantumCircuit,
+                             initial_state: Statevector | QuantumCircuit | None = None,
+                             spec_params: Mapping | None = None,
+                             estimator: BaseEstimatorV2 | None = None,
+                             sampler: BaseSamplerV2 | None = None,
+                             precision: float | None = None
+                             ):
+        '''
+        [DEPRECATED]
+        Calculate the expectation value of a given observable.
+        
+        Parameters:
+        - observable: str, name of the observable to calculate (e.g. "Energy", "Persistence", "Gauss_Law_Violation", "Pair_Creation").
+        - state: Statevector, the state for which to calculate the observable.
+        - initial_state: optional (default: None), Statevector, the initial state of the system (used for some observables like Persistence).
+        - spec_params: optional (default: None), Mapping, specific parameters for the observable calculation if needed.
+        '''
+        
+        if observable == "Energy":
+            value = calculateEnergy(state, self.hamiltonian_evol, estimator, precision)
+        elif observable == "Persistence":
+            value = calculateVacuumPersistence(state, initial_state, sampler)
+        elif observable == "Gauss_Law_Violation":
+            value = calculateGaussLawViolation(state, self.qubits_num, estimator, precision)
+        elif observable == "Pair_Creation":
+            value = calculatePairCreation(state, self.qubits_num, estimator, precision)
+        elif observable == "Electric_Field":
+            value = calculateElectricField(state, self.qubits_num, self.e0, estimator, precision)
+        else:
+            print(f"{getTimer()} WARNING: Observable {observable} not implemented...")
+            value = None
+        
+        return value
     
