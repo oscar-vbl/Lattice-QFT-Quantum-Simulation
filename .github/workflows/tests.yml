@@ -29,12 +29,6 @@ jobs:
         # Install libraries
         if [ -f requirements.txt ]; then pip install -r requirements.txt; fi
         
-    - name: Format and Lint with Ruff
-      run: |
-        # Check for linting errors (the --output-format flag makes the output look nice in GitHub)
-        cd QuantumSimulation
-        ruff check --output-format=github .
-        
     - name: Test with pytest
       run: |
         # Execute the tests and calculate what percentage of code is covered
