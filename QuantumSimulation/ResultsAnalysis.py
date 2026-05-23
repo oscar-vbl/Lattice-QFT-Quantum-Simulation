@@ -6,6 +6,7 @@ This module provides tools to fit simulation results and validate theoretical fo
 
 import sys
 from pathlib import Path
+
 sys.path.append(Path(__file__).parent.as_posix())
 from Plots import plot_simulated_vs_analytical
 from Utils import getTimer, parseDictToPlot
@@ -15,54 +16,60 @@ from scipy.signal import argrelmin
 from Operators import measure_electric_field
 from qiskit.quantum_info import Statevector
 
+
 def check_regime(L, a, m, e0):
-    '''
+    """
     Print parameters of the hamiltonian to check if we are in the regime where Schwinger formula is valid and non-trivial.
-    '''
-    w = 1 / (2*a)
+    """
+    w = 1 / (2 * a)
     J = a / 2
-    L_phys = (L-1) * a
+    L_phys = (L - 1) * a
     eE = e0
-    M_S = 1/np.sqrt(np.pi)  # Boson mass (e=1, m=0 approx)
-    
+    M_S = 1 / np.sqrt(np.pi)  # Boson mass (e=1, m=0 approx)
+
     print(f"{getTimer()} INFO: Parameters of the hamiltonian to check regime:")
     print(f"    w = {w:.2f}  (hopping)")
     print(f"    J = {J:.4f}  (gauge coupling)")
-    print(f"    w/J = {w/J:.1f}  (must be O(1) for non trivial physics)")
-    print(f"    eE/πm² = {eE/(np.pi*m**2):.2f}  (must be >> 1)")
-    print(f"    L_phys·M_S = {L_phys*M_S:.2f}  (must be >> 1)")
-    print(f"    eE·a = {eE*a:.3f}  (must be << 1 for continous limit)")
+    print(f"    w/J = {w / J:.1f}  (must be O(1) for non trivial physics)")
+    print(f"    eE/πm² = {eE / (np.pi * m**2):.2f}  (must be >> 1)")
+    print(f"    L_phys·M_S = {L_phys * M_S:.2f}  (must be >> 1)")
+    print(f"    eE·a = {eE * a:.3f}  (must be << 1 for continous limit)")
 
 
-def fit_persistence(evolution_data, config,
-                    initial_state=None,
-                    interference_method="log_derivative",
-                    use_offset=False,
-                    return_plot=False,
-                    print_info=True):
-    '''
+def fit_persistence(
+    evolution_data,
+    config,
+    initial_state=None,
+    interference_method="log_derivative",
+    use_offset=False,
+    return_plot=False,
+    print_info=True,
+):
+    """
     Fit the persistence curve to an exponential decay, with a possible offset.
     The offset can be used to account for the non-zero value of the persistence at the end of the simulation, which is due to the finite size of the system and the revivals.
     The function also applies cut-offs to discard the initial Zeno region and the final revivals, and focuses on the Schwinger region where the decay is expected to be exponential.
     The cut-offs are determined by analyzing the derivative of the persistence curve.
-    
+
     Per default, if return_plot=False, the function returns the fitted parameters.
     If return_plot=True, the function returns the plot object, showing the fit.
-    '''
+    """
     cut_off_times = {
-        "T_Zeno_End":         None,
-        "T_Schwinger_End":    None,
+        "T_Zeno_End": None,
+        "T_Schwinger_End": None,
         "T_Interference_End": None,
-        "T_Revivals_End":     None,
+        "T_Revivals_End": None,
     }
+
     # Robust exponential fit
     def decay_model(t, gamma, A):
         return A * np.exp(-gamma * t)
+
     def decay_model_offset(t, gamma, A, C):
         return A * np.exp(-gamma * t) + C
 
     persistence_orig = evolution_data["Persistence"].values
-    t_values_orig    = evolution_data.index.values
+    t_values_orig = evolution_data.index.values
 
     cut_off_times["T_Revivals_End"] = t_values_orig[-1]
 
@@ -73,14 +80,19 @@ def fit_persistence(evolution_data, config,
     else:
         t_fit_end = t_values_orig[-1]  # fallback if no minima found
     mask = t_values_orig <= t_fit_end
-    
-    t_values    = t_values_orig[mask]
+
+    t_values = t_values_orig[mask]
     persistence = persistence_orig[mask]
     cut_off_times["T_Schwinger_End"] = t_fit_end
 
     # 2. Find derivative change point (to discard initial oscillation)
     t_step = t_values[1] - t_values[0]
-    persistence_deriv = np.array([(persistence[i+1] - persistence[i-1])/t_step for i in range(1, len(persistence)-1)])
+    persistence_deriv = np.array(
+        [
+            (persistence[i + 1] - persistence[i - 1]) / t_step
+            for i in range(1, len(persistence) - 1)
+        ]
+    )
     persistence_deriv = np.diff(persistence) / np.diff(t_values)
     if persistence[1] - persistence[0] < 0:
         # Discard initial oscillation
@@ -90,10 +102,10 @@ def fit_persistence(evolution_data, config,
         # Discard initial oscillation
         min_pers_der = min(persistence_deriv)
         cut_off_zeno_t = t_values[1:-1][list(persistence_deriv).index(min_pers_der)]
-    
+
     # Apply cut-off to discard relaxation
-    mask2       = t_values >= cut_off_zeno_t
-    t_values    = t_values[mask2]
+    mask2 = t_values >= cut_off_zeno_t
+    t_values = t_values[mask2]
     persistence = persistence[mask2]
     persistence_deriv = persistence_deriv[mask2[1:]]
     cut_off_times["T_Zeno_End"] = cut_off_zeno_t
@@ -104,101 +116,101 @@ def fit_persistence(evolution_data, config,
         # In the exponential region, ln(P) is a straight line, so its first derivative
         # is constant (approx. -Gamma). When revivals start, the curve becomes
         # flatter and the derivative starts to 0.
-        
+
         # 3.1. Drop negatives and zeros to avoid issues with logarithm
         valid_mask = persistence > 1e-12
         t_valid = t_values[valid_mask]
         p_valid = persistence[valid_mask]
-        
+
         # 3.2. Log and first derivative
         log_persistence = np.log(p_valid)
         d_log_p = np.diff(log_persistence) / np.diff(t_valid)
-        t_d = t_valid[1:] # Tiempos asociados a la derivada
-        
+        t_d = t_valid[1:]  # Tiempos asociados a la derivada
+
         # 3.3. Base line for slope.
         # We take the first three points after Zeno where it is pure exponential
         window = max(3, len(d_log_p) // 10)
         baseline_slope = np.mean(d_log_p[:window])
-        
+
         # 3.4. Tolerance threshold
-        # We consider that when the slope gets bigger than tolerance * baseline_slope, 
+        # We consider that when the slope gets bigger than tolerance * baseline_slope,
         # where baseline_slope is the mean log slope of the 3 first points (pure exp),
         # the interference starts
         # Slopes are negative, so we check when it becomes less negative (bigger)
-        tolerance = 0.75 
+        tolerance = 0.75
         threshold_slope = baseline_slope * tolerance
-        
+
         # 3.5. Check when slope gets bigger than threshold
         deviations = np.where(d_log_p[window:] > threshold_slope)[0]
-        
+
         if len(deviations) > 0:
             # Cut off index
             cut_off_idx = deviations[0] + window
             t_concavity_change = t_d[cut_off_idx]
-            
+
             # Logarithmic derivative change found, we must redefine Schwinger cutoff
             # There is a region of interference between Schwinger and revivals
             cut_off_times["T_Interference_End"] = cut_off_times["T_Schwinger_End"]
-            cut_off_times["T_Schwinger_End"]    = t_concavity_change
+            cut_off_times["T_Schwinger_End"] = t_concavity_change
         else:
             # No concavity change found
             # Schwinger cutoff is at the local minima defined before
             # Interference cutoff is null
             t_concavity_change = t_values[-1]
-    
+
     elif interference_method == "concavity_change":
         # Look if curve gets plain or changes concavity
         # 1st der close to 0 or positive → not exponential anymore, stop before
         # 2nd der changes sign → inflection point, stop before
         sec_persistence_deriv = np.diff(persistence_deriv) / np.diff(t_values)
-        
+
         # If sec derivative changes sign, it indicates an inflection point.
         sec_der_negs = np.where(sec_persistence_deriv < 0)[0]
         if len(sec_der_negs) > 0:
-            concavity_change_index = sec_der_negs[0] 
+            concavity_change_index = sec_der_negs[0]
             t_concavity_change = t_values[concavity_change_index]
             # Concavity change found, we must redefine Schwinger cutoff
             # There is a region of interference between Schwinger and revivals
             cut_off_times["T_Interference_End"] = cut_off_times["T_Schwinger_End"]
-            cut_off_times["T_Schwinger_End"]    = t_concavity_change
+            cut_off_times["T_Schwinger_End"] = t_concavity_change
         else:
             concavity_change_index = len(persistence) - 1
             t_concavity_change = t_values[concavity_change_index]
             # No concavity change found
             # Schwinger cutoff is at the local minima defined before
             # Interference cutoff is null
-    
+
     # Apply cut-off to discard non-exponential tail
-    mask3       = t_values <= t_concavity_change
-    t_values    = t_values[mask3]
+    mask3 = t_values <= t_concavity_change
+    t_values = t_values[mask3]
     persistence = persistence[mask3]
-    
+
     if not use_offset:
         # Normalize to 1 at cut-off point
         persistence = persistence / persistence[0]
         fit_model = decay_model
-        p0_init     = [0.5, 0.85]     # Found by inspection
+        p0_init = [0.5, 0.85]  # Found by inspection
         bounds_init = ([0, 0.5], [50, 1.05])
     else:
         fit_model = decay_model_offset
         # Dynamic estimation (Data-driven p0)
         # 1. C (offset) is, at most, the minimum of persistence
-        c_guess = min(persistence) 
-        
+        c_guess = min(persistence)
+
         # 2. P(0) = A + C
         # So, A = P(0) - C
         a_guess = persistence[0] - c_guess
-        
+
         # 3. Gamma_guess: generic
         gamma_guess = 0.5
-        
+
         # [gamma, A, C]
-        p0_init     = [gamma_guess, a_guess, c_guess] 
-        
+        p0_init = [gamma_guess, a_guess, c_guess]
+
         # Limits: ([gamma_min, A_min, C_min], [gamma_max, A_max, C_max])
         bounds_init = (
-            [0.0, 0.0, 0.0],       # Neither decaiment, amplitude nor offset are negative
-            [50.0, 1.05, 1.0]      # Upper limit for gamma, A and C (cannot exceed 1)
+            [0.0, 0.0, 0.0],  # Neither decaiment, amplitude nor offset are negative
+            [50.0, 1.05, 1.0],  # Upper limit for gamma, A and C (cannot exceed 1)
         )
     # Redefine t=0 where fit starts
     t_values_rel = t_values - t_values[0]
@@ -207,10 +219,10 @@ def fit_persistence(evolution_data, config,
     # Fit to decay_model
     popt, pcov = curve_fit(
         fit_model,
-        t_values,           
-        persistence,        
-        p0=p0_init,     # Found by inspection
-        bounds=bounds_init
+        t_values,
+        persistence,
+        p0=p0_init,  # Found by inspection
+        bounds=bounds_init,
     )
     simulated_gamma = popt[0]
     gamma_err = np.sqrt(np.diag(pcov))[0]
@@ -219,116 +231,149 @@ def fit_persistence(evolution_data, config,
         L = config["Hamiltonian"]["Parameters"]["L"]
         a = config["Hamiltonian"]["Parameters"]["a"]
         m = config["Hamiltonian"]["Parameters"]["m"]
-        e0 = config["Temporal Evolution"]["Quench"]["Parameters_to_Change"]["e0"] # Campo eléctrico efectivo (ajustado por la configuración)
+        e0 = config["Temporal Evolution"]["Quench"]["Parameters_to_Change"]["e0"]
         state = Statevector.from_instruction(initial_state)
         # Physical electric field E_n
-        eE_evol = measure_electric_field(state, L, e0) 
+        eE_evol = measure_electric_field(state, L, e0)
 
         # Analytical value of gamma from config
-        gamma_analytical = sum([a * (abs(eE_evol_) / (2 * np.pi)) * 
-                            np.exp(-(np.pi * m**2) / abs(eE_evol_)) 
-                            for eE_evol_ in eE_evol if abs(eE_evol_) > 1e-6])  # Evitar división por cero
-        
+        gamma_analytical = sum(
+            [
+                a
+                * (abs(eE_evol_) / (2 * np.pi))
+                * np.exp(-(np.pi * m**2) / abs(eE_evol_))
+                for eE_evol_ in eE_evol
+                if abs(eE_evol_) > 1e-6
+            ]
+        )  # Avoid zero division
+
         if print_info:
             # Check regime for validity of Schwinger formula
             check_regime(L, a, m, e0)
-            print(f"{getTimer()} INFO: Γ (simulated):  {simulated_gamma:.4f} ± {gamma_err:.4f}")
+            print(
+                f"{getTimer()} INFO: Γ (simulated):  {simulated_gamma:.4f} ± {gamma_err:.4f}"
+            )
             print(f"{getTimer()} INFO: Γ (analytical): {gamma_analytical:.4f}")
-            print(f"{getTimer()} INFO: Deviation: {abs(simulated_gamma - gamma_analytical) / gamma_analytical * 100:.1f}%")
+            print(
+                f"{getTimer()} INFO: Deviation: {abs(simulated_gamma - gamma_analytical) / gamma_analytical * 100:.1f}%"
+            )
     else:
-        print(f"{getTimer()} INFO: No initial state provided, skipping analytical comparison.")
+        print(
+            f"{getTimer()} INFO: No initial state provided, skipping analytical comparison."
+        )
         gamma_analytical, gamma_err, eE_evol = None, None, None
 
     if return_plot:
         plot_params = parseDictToPlot(
-            {**config["Hamiltonian"]["Parameters"], **config["Temporal Evolution"]["Quench"]["Parameters_to_Change"]},
+            {
+                **config["Hamiltonian"]["Parameters"],
+                **config["Temporal Evolution"]["Quench"]["Parameters_to_Change"],
+            },
             remove_keys=[],
-            rename_keys={"e0": "$\\varepsilon_0$"})
-        fig, axes = plot_simulated_vs_analytical(decay_model, persistence, t_values,
-                                                 simulated_gamma, popt[1], gamma_analytical,
-                                                 params=plot_params,
-                                                 time_offset=cut_off_times["T_Zeno_End"])# Add T_Schwinger to plot from the beginning of the curve
+            rename_keys={"e0": "$\\varepsilon_0$"},
+        )
+        fig, axes = plot_simulated_vs_analytical(
+            decay_model,
+            persistence,
+            t_values,
+            simulated_gamma,
+            popt[1],
+            gamma_analytical,
+            params=plot_params,
+            time_offset=cut_off_times["T_Zeno_End"],
+        )  # Add T_Schwinger to plot from the beginning of the curve
         return fig, axes
     else:
         return simulated_gamma, gamma_analytical, gamma_err, eE_evol, cut_off_times
 
+
 def evaluate_energy_statevector(circuit, parameters, param_values, hamiltonian_matrix):
-    '''
+    """
     Evaluate exact energy using Statevector
-    '''
+    """
     bound_circuit = circuit.assign_parameters(dict(zip(parameters, param_values)))
     state = Statevector(bound_circuit).data
     # <psi | H | psi>
     energy = np.real(np.vdot(state, hamiltonian_matrix.dot(state)))
     return energy
 
-def calculate_global_gradient_variance(ansatz_circuit, hamiltonian_sparse, num_samples=100):
-    '''
+
+def calculate_global_gradient_variance(
+    ansatz_circuit, hamiltonian_sparse, num_samples=100
+):
+    """
     Calculate mean variance of the gradient of all parameters inside a circuit.
-    '''
+    """
     params = ansatz_circuit.parameters
     num_params = len(params)
     if num_params == 0:
         return 0.0
-    
+
     # Matrix to save all gradients: (num_samples, num_params)
     all_gradients = np.zeros((num_samples, num_params))
-    
+
     for s in range(num_samples):
         # 1. Random point in the energy landscape
-        theta_random = np.random.uniform(0, 2*np.pi, num_params)
-        
+        theta_random = np.random.uniform(0, 2 * np.pi, num_params)
+
         # 2. Calculate gradient for each parameter
         for i in range(num_params):
             # Forward shift (+ pi/2)
             theta_plus = theta_random.copy()
             theta_plus[i] += np.pi / 2
-            e_plus = evaluate_energy_statevector(ansatz_circuit, params, theta_plus, hamiltonian_sparse)
-            
+            e_plus = evaluate_energy_statevector(
+                ansatz_circuit, params, theta_plus, hamiltonian_sparse
+            )
+
             # Backward shift (+ pi/2)
             theta_minus = theta_random.copy()
             theta_minus[i] -= np.pi / 2
-            e_minus = evaluate_energy_statevector(ansatz_circuit, params, theta_minus, hamiltonian_sparse)
-            
+            e_minus = evaluate_energy_statevector(
+                ansatz_circuit, params, theta_minus, hamiltonian_sparse
+            )
+
             # Gradient dH/d\theta_i
             all_gradients[s, i] = 0.5 * (e_plus - e_minus)
-            
+
     # 3. Calculate variance of each parameter
     variances = np.var(all_gradients, axis=0)
-    
+
     # 4. Mean of all variances
     return np.mean(variances)
 
-def calculate_gradient_variance(ansatz_circuit,
-                                hamiltonian_sparse,
-                                num_samples=100,
-                                target_param_idx=0):
-    '''
+
+def calculate_gradient_variance(
+    ansatz_circuit, hamiltonian_sparse, num_samples=100, target_param_idx=0
+):
+    """
     Calculate gradient variance respect to the given target_param_idx parameter
-    '''
+    """
     params = ansatz_circuit.parameters
     if len(params) == 0:
         return 0.0
-        
+
     gradients = []
-    
+
     for _ in range(num_samples):
         # 1. Random point in the energy landscape
-        theta_random = np.random.uniform(0, 2*np.pi, len(params))
-        
+        theta_random = np.random.uniform(0, 2 * np.pi, len(params))
+
         # 2. Forward shift (+ pi/2)
         theta_plus = theta_random.copy()
         theta_plus[target_param_idx] += np.pi / 2
-        e_plus = evaluate_energy_statevector(ansatz_circuit, params, theta_plus, hamiltonian_sparse)
-        
+        e_plus = evaluate_energy_statevector(
+            ansatz_circuit, params, theta_plus, hamiltonian_sparse
+        )
+
         # 3. Backward shift (- pi/2)
         theta_minus = theta_random.copy()
         theta_minus[target_param_idx] -= np.pi / 2
-        e_minus = evaluate_energy_statevector(ansatz_circuit, params, theta_minus, hamiltonian_sparse)
-        
+        e_minus = evaluate_energy_statevector(
+            ansatz_circuit, params, theta_minus, hamiltonian_sparse
+        )
+
         # 4. Gradient calculation
         grad = 0.5 * (e_plus - e_minus)
         gradients.append(grad)
-        
-    return np.var(gradients)
 
+    return np.var(gradients)

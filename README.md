@@ -1,4 +1,7 @@
 # Lattice-QFT-Quantum-Simulation
+![Python](https://img.shields.io/badge/python-3.10%20%7C%203.11%20%7C%203.12-blue)
+![Qiskit](https://img.shields.io/badge/qiskit-1.0+-6133BD)
+[![Tests](https://github.com/oscar-vbl/Lattice-QFT-Quantum-Simulation/actions/workflows/tests.yml/badge.svg)](https://github.com/oscar-vbl/Lattice-QFT-Quantum-Simulation/actions/workflows/tests.yml)
 
 Quantum simulation of the **Schwinger effect** in 1+1D lattice QED on NISQ quantum computers using Qiskit.
 
