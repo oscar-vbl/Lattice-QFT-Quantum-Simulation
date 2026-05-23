@@ -482,8 +482,8 @@ class EnergyObservable(BaseObservable):
     def get_operators(self) -> list[SparsePauliOp]:
         return [self.hamiltonian]
 
-    def process_result_data(self, evs, stds) -> tuple[float, float]:
-        return float(evs), float(stds)
+    def process_result_data(self, evs: Iterable, stds: Iterable) -> tuple[float, float]:
+        return float(evs[0]), float(stds[0])
 
     def calculate_exact(self, state: Statevector | QuantumCircuit) -> float:
         return self._exactOperatorExpectation(state, self.hamiltonian)
@@ -547,7 +547,7 @@ class GaussLawViolationObservable(BaseObservable):
         return self.gauss_squared_ops
 
     def process_result_data(self, evs, stds) -> tuple[float, float]:
-        evs_real = np.squeeze(evs).real
+        evs_real  = np.squeeze(evs).real
         stds_real = np.squeeze(stds).real
 
         total_violation = float(np.sum(np.abs(evs_real)))
