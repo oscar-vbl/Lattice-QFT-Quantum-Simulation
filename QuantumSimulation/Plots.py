@@ -2,8 +2,8 @@ import matplotlib.pyplot as plt
 import numpy as np
 from scipy.optimize import curve_fit
 from scipy.odr import ODR, Model, RealData
-from Utils import getTimer
-from ResultsAnalysis import calculate_fit_quality
+from .Utils import getTimer
+from .ResultsAnalysis import calculate_fit_quality
 from qiskit.circuit import QuantumCircuit, Parameter, QuantumRegister
 import copy
 
@@ -617,7 +617,7 @@ def plot_ansatz_circuit(base_config, L, reps, ansatz):
     """
     Figure: 00_01_Circuit_{ansatz}
     """
-    from SchwingerSimulation import SchwingerSimulation
+    from .SchwingerSimulation import SchwingerSimulation
 
     ansatz_config = copy.deepcopy(base_config)
     ansatz_config["Ansatz"]["Type"] = ansatz

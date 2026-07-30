@@ -8,9 +8,11 @@ from . import Utils
 from . import Ansatzes
 from . import Plots
 from . import SchwingerSimulation
+from . import ResultsAnalysis
 
 __all__ = [
     "SchwingerSimulation",
+    "ResultsAnalysis",
     "_config",
     "core",
     "observables",

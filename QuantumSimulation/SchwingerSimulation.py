@@ -21,7 +21,7 @@ from .observables import (
     GaussLawViolationObservable,
     ElectricFieldObservable,
 )
-from Ansatzes import (
+from .Ansatzes import (
     build_schwinger_hva,
     build_schwinger_hva_full,
     build_schwinger_hva_balanced,

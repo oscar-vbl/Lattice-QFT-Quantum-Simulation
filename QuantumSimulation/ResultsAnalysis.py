@@ -15,8 +15,8 @@ import pandas as pd
 from typing import Callable
 
 sys.path.append(Path(__file__).parent.as_posix())
-from Utils import getTimer, parseDictToPlot
-from observables.electric_field import ElectricFieldObservable
+from .Utils import getTimer, parseDictToPlot
+from .observables.electric_field import ElectricFieldObservable
 
 
 def check_regime(L, a, m, e0):
@@ -305,7 +305,7 @@ def fit_persistence(
             remove_keys=[],
             rename_keys={"e0": "$\\varepsilon_0$"},
         )
-        from Plots import plot_simulated_vs_analytical
+        from .Plots import plot_simulated_vs_analytical
         fig, axes = plot_simulated_vs_analytical(
             decay_model,
             p_fit,

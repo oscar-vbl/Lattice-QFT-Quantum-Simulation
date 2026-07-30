@@ -6,7 +6,7 @@ import pandas as pd
 from typing import Callable, Mapping, Any, Iterable
 import pickle
 
-from _config import (
+from ._config import (
     PROJECT_ROOT,
     CONFIGS_FOLDER,
     DATA_FOLDER,
