@@ -3,5 +3,5 @@ name = "QuantumSimulation"
 version = "0.1.0"
 dependencies = []
 
-[tool.setuptools]
-packages = ["QuantumSimulation"]
+[tool.setuptools.packages.find]
+include = ["QuantumSimulation", "QuantumSimulation.*"]

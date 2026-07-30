@@ -5,7 +5,6 @@ from qiskit.quantum_info import Statevector, SparsePauliOp
 from qiskit.primitives import StatevectorEstimator, StatevectorSampler
 from pathlib import Path
 
-sys.path.append(Path(__file__).parent.parent.as_posix())
 from QuantumSimulation.SchwingerSimulation import SchwingerSimulation
 from QuantumSimulation.observables import EnergyObservable, PersistenceObservable
 from QuantumSimulation.Operators import buildSchwingerHamiltonianTemporalGauge
