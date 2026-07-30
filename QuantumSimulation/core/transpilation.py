@@ -1,4 +1,7 @@
-from qiskit_ibm_runtime import QiskitRuntimeService
+from __future__ import annotations
+from typing import TYPE_CHECKING
+if TYPE_CHECKING:
+    from qiskit_ibm_runtime import QiskitRuntimeService
 from qiskit_aer import AerSimulator
 from qiskit import QuantumCircuit, generate_preset_pass_manager
 from qiskit.transpiler.layout import TranspileLayout
