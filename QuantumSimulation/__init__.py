@@ -1,7 +1,6 @@
 from . import _config
 from . import core
 from . import observables
-from . import tests
 from . import circuitBuilder
 from . import Calculations
 from . import Operators
@@ -15,7 +14,6 @@ __all__ = [
     "_config",
     "core",
     "observables",
-    "tests",
     "circuitBuilder",
     "Ansatzes",
     "Calculations",
