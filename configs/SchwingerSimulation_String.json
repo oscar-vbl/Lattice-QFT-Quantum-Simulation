@@ -1,0 +1,59 @@
+{
+    "QubitsNumber": 16,
+    "Hamiltonian": {
+        "Type": "Schwinger",
+        "Gauge": "Temporal",
+        "Parameters": {
+            "L": 16,
+            "a": 0.5,
+            "m": 0.1,
+            "e0": 0
+        },
+        "Lambda_Charge_Penalty": 0
+    },
+    "Backend": {
+        "Type": null
+    },
+    "Ansatz": {
+        "Type": "ExcitationPreserving",
+        "Entanglement": "linear",
+        "Reps": 4,
+        "Initial State": {
+            "Vacuum": true,
+            "Staggered": true
+        },
+        "Init_Strategy": "random_small",
+        "Minimizer": {
+            "Method": "L-BFGS-B",
+            "Options": {
+                "maxiter": 10000,
+                "ftol": 1e-5
+            }
+        },
+        "Ensure_Zero_Charge": true
+    },
+    "Temporal Evolution": {
+        "Active": true,
+        "Time_Steps": 200,
+        "Total_Time": 40,
+        "Quench": {
+            "Active": false,
+            "Parameters_to_Change": {
+                "e0": 0.0
+            }
+        },
+        "Evolution_Gate": {
+            "Type": "Pauli",
+            "Synthesis": "TrotterSuzuki",
+            "Synthesis_Params": {"order": 2}
+        },
+        "Evolution_Method": "MatrixExponential",
+        "Observables": {
+            "Observables_List": ["Electric_Field"],
+            "Observables_Params": {
+                "Energy": {},
+                "Persistence": {}
+            }
+        }
+    }
+}

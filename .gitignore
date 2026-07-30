@@ -4,11 +4,15 @@ QuantumSimulation/SchwingerSimulation_OldEvolve.py
 QuantumSimulation/Tests/tests_simulation_v1.py
 test.txt
 *.pyc
+.coverage
 __pycache__/
 .vscode/
 .ruff_cache/
 .venv/
 .ipynb_checkpoints/
+.pytest_cache/
+build/
+QuantumSimulation.egg-info/
 testFiles/
 Data/
 Plots/

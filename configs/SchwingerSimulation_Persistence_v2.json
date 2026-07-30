@@ -1,0 +1,64 @@
+{
+    "QubitsNumber": 10,
+    "Hamiltonian": {
+        "Type": "Schwinger",
+        "Gauge": "Temporal",
+        "Parameters": {
+            "L": 10,
+            "a": 0.5,
+            "m": 0.1,
+            "e0": 0
+        },
+        "Lambda_Charge_Penalty": 0
+    },
+    "Backend": {
+        "Type": "Aer",
+        "Shots": 1024
+    },
+    "Ansatz": {
+        "Type": "ExcitationPreserving",
+        "Entanglement": "linear",
+        "Reps": 4,
+        "Initial State": {
+            "Vacuum": true,
+            "Staggered": true
+        },
+        "Init_Strategy": "random_small",
+        "Minimizer": {
+            "Method": "L-BFGS-B",
+            "Options": {
+                "maxiter": 10000,
+                "ftol": 1e-5
+            }
+        },
+        "Ensure_Zero_Charge": true
+    },
+    "Temporal Evolution": {
+        "Active": true,
+        "Time_Steps": 100,
+        "Total_Time": 10,
+        "Quench": {
+            "Active": true,
+            "Parameters_to_Change": {
+                "e0": 0.5
+            }
+        },
+        "Evolution_Gate": {
+            "Type": "Pauli",
+            "Synthesis": "TrotterSuzuki",
+            "Synthesis_Params": {"order": 2}
+        },
+        "Trotter_Steps": {
+            "dt":      {"step_multiplier": 1.0},
+            "dt_half": {"step_multiplier": 0.5}
+        },
+        "Evolution_Method": null,
+        "Observables": {
+            "Observables_List": ["Energy", "Persistence", "Electric_Field"],
+            "Observables_Params": {
+                "Energy": {},
+                "Persistence": {}
+            }
+        }
+    }
+}

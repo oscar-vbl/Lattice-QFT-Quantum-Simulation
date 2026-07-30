@@ -1,10 +1,35 @@
 import matplotlib.pyplot as plt
 import numpy as np
 from scipy.optimize import curve_fit
+from scipy.odr import ODR, Model, RealData
 from Utils import getTimer
+from ResultsAnalysis import calculate_fit_quality
 from qiskit.circuit import QuantumCircuit, Parameter, QuantumRegister
 import copy
 
+def set_plot_style(
+        style: str = "academic"
+) -> None:
+    """
+    Set the style of the plots according to the specified style.
+    """
+    if style == "academic":
+        # Academic style
+        plt.rcParams.update(
+            {
+                "font.family": "serif",
+                "mathtext.fontset": "dejavuserif",    # Makes math Latex ($$) serif
+                "axes.labelsize": 12,
+                "font.size": 11,
+                "legend.fontsize": 10,
+                "xtick.labelsize": 10,
+                "ytick.labelsize": 10,
+            }
+        )
+    else:
+        print(f"{getTimer()} WARNING: Unknown plot style '{style}'. Using default style.")
+        # Default style
+        plt.rcParams.update(plt.rcParamsDefault)
 
 def simplePlot(x, y, title="", xlabel="", ylabel="", savePath=None):
     """
@@ -80,20 +105,35 @@ def plot_gamma_vs_qubitNum(fit_results_df, params=None):
     """
     Figure: decay_rate_qubits_num
     """
+    set_plot_style()
     fig, ax = plt.subplots()
-    ax.plot(
-        fit_results_df.index,
-        fit_results_df["Gamma_Analytical"],
-        "ro",
-        label="$\\Gamma$ (Analytical)",
-        markersize=5,
-    )
-    ax.plot(
+    if "Gamma_Analytical_Err" not in fit_results_df.columns: 
+        fit_results_df["Gamma_Analytical_Err"] = 0
+    if "Gamma_Err" not in fit_results_df.columns:
+        fit_results_df["Gamma_Err"] = 0
+    ax.errorbar(
         fit_results_df.index,
         fit_results_df["Gamma_Simulated"],
-        "bs",
+        yerr=fit_results_df["Gamma_Err"], # Error array
+        fmt="bs",          # Blue square
+        markersize=5,      # ms=5
+        capsize=3,         # Horizontal bands in error bars
+        elinewidth=1,      # Error bar width
+        ecolor="blue",     # Error bar color
+        alpha=0.7,         # A little transparency
         label="$\\Gamma$ (Simulated)",
-        markersize=5,
+    )
+    ax.errorbar(
+        fit_results_df.index,
+        fit_results_df["Gamma_Analytical"],
+        yerr=fit_results_df["Gamma_Analytical_Err"], # Error array
+        fmt="ro",          # Red circle
+        markersize=5,      # ms=5
+        capsize=3,         # Horizontal bands in error bars
+        elinewidth=1,      # Error bar width
+        ecolor="red",     # Error bar color
+        alpha=0.7,         # A little transparency
+        label="$\\Gamma$ (Schwinger)",
     )
     ax.set_xlabel("Number of Qubits")
     ax.set_ylabel("$\\Gamma$")
@@ -109,97 +149,152 @@ def plot_simulated_vs_analytical(
     decay_model,
     persistence,
     t_values,
-    gamma_simulada,
-    A_fit,
-    gamma_analitica,
+    gamma_simulated,
+    model_args,
+    gamma_analytical,
+    gamma_err=None,
+    gamma_analytical_err=None,
     params=None,
     time_offset=0,
+    sigma=None,
 ):
     """
     Figure: best_{best_qubit_num}_decay_rate
     """
+    set_plot_style()
+    # Add time offset to make plot start from the end of the Zeno regime (T_Zeno_End) instead of t=0
+    if time_offset is None: time_offset = 0
+    t_plot = t_values + time_offset
     fig, (ax1, ax2) = plt.subplots(1, 2, figsize=(13, 6))
 
     # Left: linear scale
-    ax1.plot(t_values, persistence, "b-", lw=2, label="Simulation")
+    ax1.plot(t_plot, persistence, "b-", lw=2, label="Simulation")
+    if gamma_err is not None:
+        g_sim_label = rf"Fit: $\Gamma={gamma_simulated:.3f} \pm {gamma_err:.3f}$"
+    else:
+        g_sim_label = rf"Fit: $\Gamma={gamma_simulated:.3f}$"
     ax1.plot(
-        t_values,
-        decay_model(t_values, gamma_simulada, A_fit),
+        t_plot,
+        decay_model(t_values, gamma_simulated, *model_args),
         "r--",
         lw=1.5,
-        label=f"Fit: Γ={gamma_simulada:.3f}",
+        label=g_sim_label,
     )
+    if gamma_analytical_err is not None:
+        g_analytical_label = rf"Schwinger: $\Gamma={gamma_analytical:.3f} \pm {gamma_analytical_err:.3f}$"
+    else:
+        g_analytical_label = rf"Schwinger: $\Gamma={gamma_analytical:.3f}$"
     ax1.plot(
-        t_values,
-        np.exp(-gamma_analitica * t_values),
+        t_plot,
+        np.exp(-gamma_analytical * t_values),
         "k:",
         lw=1.5,
-        label=f"Schwinger: Γ={gamma_analitica:.3f}",
+        label=g_analytical_label,
     )
     ax1.set_xlabel("Time")
     ax1.set_ylabel("$G(t)$")
-    ax1.set_title("Vacuum Persistence Amplitude $G(t)$ vs Time")
+    ax1.set_title("Vacuum Persistence Probability $G(t)$ vs Time")
     ax1.legend()
     ax1.grid(True, alpha=0.3)
 
     # Right: logarithmic scale
     mask_pos = np.array(persistence) > 1e-4
-    ax2.semilogy(
-        t_values[mask_pos],
-        np.array(persistence)[mask_pos],
-        "b.",
-        ms=4,
+    t_values_masked = t_plot[mask_pos]
+    p_values_masked = np.array(persistence)[mask_pos]
+    y_err_masked = np.array(sigma)[mask_pos] if sigma is not None else None
+
+    # Plot with errorbar
+    ax2.errorbar(
+        t_values_masked,
+        p_values_masked,
+        yerr=y_err_masked, # Error array
+        fmt="b.",          # Blue dot
+        markersize=4,      # ms=4
+        capsize=3,         # Horizontal bands in error bars
+        elinewidth=1,      # Error bar width
+        ecolor="blue",     # Error bar color
+        alpha=0.7,         # A little transparency
         label="Simulation",
     )
-    ax2.semilogy(
-        t_values,
-        np.exp(-gamma_analitica * t_values),
-        "r--",
-        lw=2,
-        label="Schwinger Prediction",
-    )
-    ax2.set_xlabel("Time")
-    ax2.set_ylabel("$log\\left(G(t)\\right)$")
-    ax2.set_title("Rate validation (log scale)")
-    ax2.legend()
-    ax2.grid(True, which="both", alpha=0.3)
-
+    
     # Verifies that the decay is a pure exponential (not relaxation)
     # In log scale, the points should be a straight line
     # If there is curvature at the beginning (first 5-10 points), it is relaxation
     # If the straight line starts from t=0, it is a pure Schwinger decay
 
     log_p = np.log(persistence)
-    # Linear fit to log(persistence) to check if it is a straight line (pure exponential decay)
-    slope_lineal = np.polyfit(t_values, log_p, 1)
-    print(f"{getTimer()} INFO: log-linear slope: {-slope_lineal[0]:.4f}")
+    x = t_values
+    y = log_p
+    if sigma is not None:
+        y_err = np.array(sigma) / np.array(persistence) if sigma is not None else None
+        # Evaluate fit on real points to calculate stats
+        y_fit_points = decay_model(x, gamma_simulated, *model_args)
+
+        reduced_chi_sq, r2 = calculate_fit_quality(y, np.log(y_fit_points), y_err)
+
+        stats_text = (
+            f"Slope: ${gamma_simulated:.4f} \\pm {gamma_err:.4f}$\n"
+            f"$R^2 = {r2:.4f}$\n"
+            f"$\\chi_\\nu^2 = {reduced_chi_sq:.4f}$"
+        )
+    else:
+        r2 = np.corrcoef(x, y)[0, 1] ** 2
+        stats_text = (
+            f"Slope: ${gamma_simulated:.4f} \\pm {gamma_err:.4f}$\n"
+            f"$R^2 = {r2:.4f}$"
+        )
+
+    print(f"{getTimer()} INFO: log-linear slope: {-gamma_simulated:.4f}")
     print(
-        f"{getTimer()} INFO: R² of linear fit: {np.corrcoef(t_values, log_p)[0, 1] ** 2:.4f}"
+        f"{getTimer()} INFO: R² of linear fit: {r2:.4f}"
     )
-    ax2.annotate(
-        f"log-linear slope: {slope_lineal[0]:.4f}\nR²: {np.corrcoef(t_values, log_p)[0, 1] ** 2:.4f}",
-        xy=(0.95, 0.8),
-        xycoords="axes fraction",
-        fontsize=10,
-        horizontalalignment="right",
-        verticalalignment="top",
-        bbox=dict(boxstyle="round", facecolor="white", alpha=0.5),
+    # Force logarithmic scale because of using errorbar
+    ax2.set_yscale('log')
+    ax2.plot(
+        t_plot,
+        decay_model(x, gamma_simulated, *model_args), # Pass on np.exp because axis is in log scale
+        "r--",
+        lw=1.5,
+        label=f"Fit"
     )
+    ax2.plot(
+        t_plot,
+        np.exp(-gamma_analytical * t_values),
+        "k:",
+        lw=1.5,
+        label="Schwinger Prediction",
+    )
+    ax2.set_xlabel("Time")
+    ax2.set_ylabel("$\\log\\left(G(t)\\right)$")
+    ax2.set_title("Rate validation (log scale)")
+    ax2.legend(loc="lower left")
+    ax2.grid(True, which="both", alpha=0.3)
+
+    # Add box with stats
+    props = dict(boxstyle="round", facecolor="white", alpha=0.8, edgecolor="lightgray")
+    ax2.text(0.95, 0.95, stats_text, transform=ax2.transAxes, fontsize=10,
+             verticalalignment="top", horizontalalignment="right", bbox=props)
     # R² > 0.99 → pure exponential decay (Schwinger)
     # R² < 0.95 → there is curvature, a mixture of effects
 
-    # Add time offset to make plot start from the end of the Zeno regime (T_Zeno_End) instead of t=0
-    if time_offset != 0:
-        for ax in [ax1, ax2]:
-            # 1. Extract lines
-            for line in ax.get_lines():
-                # Get actual x data and add time offset
-                old_x = line.get_xdata()
-                line.set_xdata(old_x + time_offset)
 
-            # 2. Recalculate limits and redraw
-            ax.relim()
-            ax.autoscale_view()
+    # Add error bands
+    # Done here because they move with the offset
+    if time_offset is None: time_offset = 0
+    if sigma is not None:
+        ax1.fill_between(
+            t_plot,
+            persistence - sigma,
+            persistence + sigma,
+            color='blue', alpha=0.1, label=f'Simulation Uncertainty (±$\\sigma$)'
+        )
+    if gamma_err is not None:
+        ax1.fill_between(
+            t_plot,
+            decay_model(t_values, gamma_simulated - gamma_err, *model_args),
+            decay_model(t_values, gamma_simulated + gamma_err, *model_args),
+            color='red', alpha=0.1, label=f'Fit Uncertainty (±$\\sigma$)'
+        )
 
     plt.suptitle("Exponential Decay Fit and Schwinger Prediction")
     if params:
@@ -211,12 +306,28 @@ def plot_simulated_vs_analytical(
     return fig, (ax1, ax2)
 
 
-def plot_persistenece_vs_time_regimes(evolution_data, cut_off_times, params=None):
+def plot_persistenece_vs_time_regimes(evolution_data,
+                                      cut_off_times,
+                                      params=None,
+                                      sigma=None,
+                                      ideal_evolution_data=None):
     """
     Figure: best_{best_qubit_num}_persistenece_vs_time
     """
+    set_plot_style()
     fig, ax = plt.subplots(figsize=(12, 6))
-    ax.plot(evolution_data.index.values, evolution_data["Persistence"].values)
+    ax.plot(
+        evolution_data.index.values,
+        evolution_data["Persistence"].values,
+        label="Simulated Evolution",
+    )
+    if ideal_evolution_data is not None:
+        ax.plot(
+            ideal_evolution_data.index.values,
+            ideal_evolution_data["Persistence"].values,
+            "r--",
+            label="Ideal Evolution",
+        )
     ax.axvspan(
         0, cut_off_times["T_Zeno_End"], alpha=0.2, color="gray", label="Zeno Effect"
     )
@@ -250,11 +361,20 @@ def plot_persistenece_vs_time_regimes(evolution_data, cut_off_times, params=None
             color="red",
             label="Revivals",
         )
+
+    if sigma is not None:
+        ax.fill_between(
+            evolution_data.index.values,
+            evolution_data["Persistence"].values - sigma,
+            evolution_data["Persistence"].values + sigma,
+            color='blue', alpha=0.1, label='Fit Uncertainty ($\\sigma$)'
+        )
+
     ax.legend()
     ax.grid(True)
     ax.set_xlabel("Time")
     ax.set_ylabel("$G(t)$")
-    plt.suptitle("Vacuum Persistence Amplitude $G(t)$ vs Time and Regimes")
+    plt.suptitle("Vacuum Persistence Probability $G(t)$ vs Time and Regimes")
     if params:
         ax.set_title(f"Parameters: {params}", fontsize=10)
     plt.tight_layout()
@@ -265,20 +385,35 @@ def plot_gamma_vs_e0(fit_results_df, params=None, title_suffix=""):
     """
     Figure: e0_quench_{qubits_num}qubits
     """
+    set_plot_style()
     fig, ax = plt.subplots()
-    ax.plot(
-        fit_results_df.index,
-        fit_results_df["Gamma_Analytical"],
-        "ro",
-        label="$\\Gamma$ (Analytical)",
-        markersize=5,
-    )
-    ax.plot(
+    if "Gamma_Analytical_Err" not in fit_results_df.columns: 
+        fit_results_df["Gamma_Analytical_Err"] = 0
+    if "Gamma_Err" not in fit_results_df.columns:
+        fit_results_df["Gamma_Err"] = 0
+    ax.errorbar(
         fit_results_df.index,
         fit_results_df["Gamma_Simulated"],
-        "bs",
+        yerr=fit_results_df["Gamma_Err"], # Error array
+        fmt="bs",          # Blue square
+        markersize=3,      # ms=5
+        capsize=3,         # Horizontal bands in error bars
+        elinewidth=1,      # Error bar width
+        ecolor="blue",     # Error bar color
+        alpha=0.7,         # A little transparency
         label="$\\Gamma$ (Simulated)",
-        markersize=5,
+    )
+    ax.errorbar(
+        fit_results_df.index,
+        fit_results_df["Gamma_Analytical"],
+        yerr=fit_results_df["Gamma_Analytical_Err"], # Error array
+        fmt="ro",          # Red circle
+        markersize=3,      # ms=5
+        capsize=3,         # Horizontal bands in error bars
+        elinewidth=1,      # Error bar width
+        ecolor="red",     # Error bar color
+        alpha=0.7,         # A little transparency
+        label="$\\Gamma$ (Schwinger)",
     )
     ax.set_xlabel("$\\varepsilon_0$")
     ax.set_ylabel("$\\Gamma$")
@@ -293,55 +428,147 @@ def plot_gamma_vs_e0(fit_results_df, params=None, title_suffix=""):
 
 
 def ind_plot_gamma_electricField(
-    ax, gamma_simulated, field_values, field_tag="\\varepsilon_0"
+    ax, gamma_simulated, field_values,
+    gamma_err, field_err = None,
+    field_tag="\\varepsilon_0"
 ):
     """
     Individual subplots for function plot_gamma_vs_electricField
     """
     log_gamma_div_e0 = np.log(gamma_simulated / field_values)
     x, y = 1 / field_values, log_gamma_div_e0
-    ax.plot(x, y, "ro", label="$\\log(\\Gamma / E)$", markersize=5)
+    if field_err is not None:
+        x_err = field_err / (field_values ** 2)
+        y_err = np.sqrt(
+            (gamma_err / gamma_simulated) ** 2 + \
+            (field_err / field_values) ** 2
+        )
+    else:
+        x_err = None
+        #y_err = gamma_err / field_values
+        y_err = gamma_err / gamma_simulated
+    #ax.plot(x, y, "ro", label="$\\log(\\Gamma / E)$", markersize=5)
+    ax.errorbar(
+        x, y, xerr=x_err, yerr=y_err,
+        fmt="ro", markersize=5, capsize=3, elinewidth=1, ecolor="red", alpha=0.7,
+        label="$\\log(\\Gamma / E)$"
+    )
     num = "{" + "1" + "}"
     field = "{" + field_tag + "}"
-    ax.set_xlabel(rf"$\frac{num}{field}$")
+    #ax.set_xlabel(rf"$\frac{num}{field}$")
+    ax.set_xlabel(rf"$1/{field_tag}$")
     gamma = "{" + "\\Gamma" + "}"
     field = "{" + field_tag + "}"
-    ax.set_ylabel(rf"$\log\left(\frac{gamma}{field}\right)$")
+    #ax.set_ylabel(rf"$\log\left(\frac{gamma}{field}\right)$")
+    ax.set_ylabel(rf"$\log\left(\Gamma/{field_tag}\right)$")
 
     # Fit to a line to check if it's linear in log scale
     def linear_model(x, a, b):
         return a * x + b
+    
+    # Preadjustment for preliminar slope 'a'
+    # If field error is provided, we can use it to calculate a more accurate slope and error
+    if field_err is not None:
+        popt_pre, _ = curve_fit(linear_model, x, y, sigma=y_err, absolute_sigma=True)
+        a_pre = popt_pre[0]
 
-    popt, pcov = curve_fit(linear_model, x, y)
-    a_fit, b_fit = popt
-    # Add line in the plot
-    x_fit = np.linspace(x.min(), x.max(), 100)
-    y_fit = linear_model(x_fit, a_fit, b_fit)
+        # Effective correlated variance
+        # we have x=1/E, y=log(Gamma/E)
+    
+        sigma_eff = np.sqrt(
+            (gamma_err / gamma_simulated)**2 + 
+            ((field_err / field_values) * (1.0 - np.abs(a_pre) * x))**2
+        )
+
+        # ODR Fit (Orthogonal Distance Regression) ---
+        # scipy.odr needs f(beta, x)
+        def odr_linear(B, x_val):
+            return B[0] * x_val + B[1]
+
+        # ODR needs initial guess. A simple polyfit is enough.
+        beta0 = np.polyfit(x, y, 1)
+
+        # RealData assumes that x_err and y_err are standard deviations (sigma)
+        data = RealData(x, y, sx=x_err, sy=y_err)
+        model = Model(odr_linear)
+
+        # Run ODR
+        odr_obj = ODR(data, model, beta0=beta0)
+        output = odr_obj.run()
+
+        popt         = output.beta
+        a_fit, b_fit = popt
+        a_err, b_err = output.sd_beta
+        
+        # ODR calculates Chi-Squared on 'res_var'
+        reduced_chi_sq = output.res_var 
+        
+        # Add line in the plot
+        x_fit = np.linspace(x.min(), x.max(), 100)
+        y_fit = linear_model(x_fit, a_fit, b_fit)
+        y_fit_points = linear_model(x, a_fit, b_fit)
+        _, r2_weighted = calculate_fit_quality(y, y_fit_points, y_err)
+    else:
+        sigma_eff = y_err
+
+        # Final adjustment
+        popt, pcov = curve_fit(linear_model, x, y, sigma=sigma_eff, absolute_sigma=True)
+        a_fit, b_fit = popt
+        a_err, b_err = np.sqrt(np.diag(pcov))
+
+        # Add line in the plot
+        x_fit = np.linspace(x.min(), x.max(), 100)
+        y_fit = linear_model(x_fit, a_fit, b_fit)
+
+        # Evaluate fit on real points to calculate stats
+        y_fit_points = linear_model(x, a_fit, b_fit)
+        reduced_chi_sq, r2_weighted = calculate_fit_quality(y, y_fit_points, y_err)
+
     r_squared = np.corrcoef(x, y)[0, 1] ** 2
     ax.plot(
         x_fit,
         y_fit,
         "b--",
-        label=f"Fit: $a={a_fit:.4f}, b={b_fit:.4f}$, $R^2={r_squared:.4f}$",
+        #label=f"Fit: $a={a_fit:.4f}, b={b_fit:.4f}$\n$R^2={r_squared:.4f}$\n$\chi_v^2={reduced_chi_sq:.4f}$",
+        label=f"Linear Fit: $y=a \\cdot x + b$",
     )
-    ax.legend()
+    ax.legend(loc="lower left")
+
+    # Add text box with fit parameters and statistics
+    stats_text = (
+        f"$a = {a_fit:.4f} \\pm {a_err:.4f}$\n"
+        f"$b = {b_fit:.4f} \\pm {b_err:.4f}$\n"
+        f"$R^2 = {r2_weighted:.4f}$\n"
+        f"$\\chi_\\nu^2 = {reduced_chi_sq:.4f}$"
+    )
+    
+    # Set box up right (outside legend)
+    props = dict(boxstyle='round', facecolor='white', alpha=0.9, edgecolor='lightgray')
+    ax.text(0.95, 0.95, stats_text, transform=ax.transAxes, fontsize=10,
+            verticalalignment='top', horizontalalignment='right', bbox=props)    
     ax.grid(True)
     return ax, popt
 
 
-def plot_gamma_vs_electricField(gamma_simulated, e0_values, field_values, params=None):
+def plot_gamma_vs_electricField(gamma_simulated, e0_values, field_values,
+                                gamma_err, field_err=None, params=None):
     """
-    Figure: best_{best_qubit_num}_logPersistenece_vs_electricField
+    Figure: best_{best_qubit_num}_logPersistence_vs_electricField
     """
     fit_params = {}
+    set_plot_style()
     fig, axes = plt.subplots(1, 2, figsize=(12, 6))
     ax, popt = ind_plot_gamma_electricField(
-        axes[0], gamma_simulated, e0_values, field_tag="\\varepsilon_0"
+        axes[0], gamma_simulated, e0_values,
+        gamma_err, field_err=None,
+        field_tag="\\varepsilon_0"
     )
     fit_params["e0"] = popt
     ax.set_title("Persistence Log vs Background Field $\\varepsilon_0$")
     ax, popt = ind_plot_gamma_electricField(
-        axes[1], gamma_simulated, field_values, field_tag="\\langle E_n \\rangle"
+        axes[1], gamma_simulated, field_values,
+        gamma_err, field_err=field_err,
+        field_tag="\\langle E_n \\rangle"
     )
     fit_params["E_n_Mean"] = popt
     ax.set_title("Persistence Log vs Mean Electric Field $\\langle E_n \\rangle$")

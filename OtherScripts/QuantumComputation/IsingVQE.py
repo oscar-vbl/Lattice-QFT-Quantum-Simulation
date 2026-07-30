@@ -1,7 +1,7 @@
 # Basic VQE solver for the Transverse Ising model using Qiskit
 
-from circuitBuilder import buildCircuit, addGate
-from Utils import sortEigenstates
+from QuantumSimulation.circuitBuilder import buildCircuit, addGate
+from QuantumSimulation.Utils import sortEigenstates
 from qiskit.quantum_info import SparsePauliOp
 from qiskit.providers.fake_provider import GenericBackendV2
 from qiskit.quantum_info import Statevector

@@ -5,10 +5,10 @@ import copy
 from pathlib import Path
 
 sys.path.append(Path(__file__).parent.parent.as_posix())
-from _config import PLOTS_FOLDER as plt_folder
-from ResultsAnalysis import fit_persistence
-from Utils import getTimer, loadJsonConfig, parseDictToPlot, save_data
-from Plots import (
+from QuantumSimulation._config import PLOTS_FOLDER as plt_folder
+from QuantumSimulation.ResultsAnalysis import fit_persistence
+from QuantumSimulation.Utils import getTimer, loadJsonConfig, parseDictToPlot, save_data
+from QuantumSimulation.Plots import (
     plot_gamma_vs_qubitNum,
     plot_persistenece_vs_time_regimes,
     plot_gamma_vs_e0,
@@ -59,7 +59,7 @@ def fit_persistence_e0(config, e0_values, e0_data=None, initial_state=None):
         e0_config = copy.deepcopy(config)
         e0_config["Temporal Evolution"]["Quench"]["Parameters_to_Change"]["e0"] = e0
 
-        simulated_gamma, gamma_analytical, gamma_err, eE_evol, cut_off_times = (
+        simulated_gamma, gamma_analytical, gamma_err, gamma_analytical_err, eE_evol, cut_off_times = (
             fit_persistence(
                 evolution_data,
                 e0_config,
@@ -118,7 +118,7 @@ def fit_persistence_qubits_num(config, qubits_num_values, qubits_num_data=None):
         qubits_num_config["QubitsNumber"] = qubits_num
         qubits_num_config["Hamiltonian"]["Parameters"]["L"] = qubits_num
 
-        simulated_gamma, gamma_analytical, gamma_err, eE_evol, cut_off_times = (
+        simulated_gamma, gamma_analytical, gamma_err, gamma_analytical_err, eE_evol, cut_off_times = (
             fit_persistence(
                 evolution_data,
                 qubits_num_config,
@@ -141,7 +141,7 @@ def fit_persistence_qubits_num(config, qubits_num_values, qubits_num_data=None):
 
 if __name__ == "__main__":
     # Load Config
-    config = loadJsonConfig("SchwingerSimulation_Persistence.json")
+    config = loadJsonConfig("SchwingerSimulation_Persistence_v2.json")
 
     # Set to False if you want to run all simulations from scratch
     # True to load previously simulated data (if available) or run simulation if not found.
@@ -161,7 +161,7 @@ if __name__ == "__main__":
         qubits_num_data = load_evolution_and_initial(
             analysis_name,
             qubit_num_values,
-            evolution_temp="qubits_num_{value}_quench_data.csv",
+            evolution_temp=".csv",
             initial_state_temp="qubits_num_{value}_initial_state.qpy",
             backup_config=config,
             backup_key="L",

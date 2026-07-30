@@ -3,8 +3,8 @@ Module with functions to calculate observables,
 as well as generic operations, such as expectation values, fidelity and amplitude between states.
 """
 
-from Utils import getTimer
-from Operators import (
+from .Utils import getTimer
+from .Operators import (
     gauss_operator,
     buildChargeOperatorMinimal,
     buildPairCreationOperators,

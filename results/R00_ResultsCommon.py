@@ -10,9 +10,9 @@ import pandas as pd
 from pathlib import Path
 
 sys.path.append(Path(__file__).parent.parent.as_posix())
-from _config import DATA_FOLDER as data_folder
-from Utils import getTimer, load_data, save_data
-from SchwingerSimulation import SchwingerSimulation
+from QuantumSimulation._config import DATA_FOLDER as data_folder
+from QuantumSimulation.Utils import getTimer, load_data, save_data
+from QuantumSimulation.SchwingerSimulation import SchwingerSimulation
 
 
 def get_simulation_data(config, initial_state=None):
@@ -142,12 +142,13 @@ def load_evolution_and_initial(
 def load_simulator_instance(
     analysis_name,
     values,
-    initial_state_temp,
+    simulator_file_template,
     use_simulated_data=True,
     backup_config=None,
     backup_key="L",
     backup_key_is_quench=False,
     save_if_simulated=True,
+    initial_states={},
 ):
     values_data = {}
     for value in values:
@@ -163,7 +164,7 @@ def load_simulator_instance(
             try:
                 # Load simulator instance
                 simulator = load_data(
-                    analysis_name, initial_state_temp.format(value=fileValue)
+                    analysis_name, simulator_file_template.format(value=fileValue)
                 )
                 values_data[value] = {"simulator": simulator}
             except:
@@ -190,7 +191,7 @@ def load_simulator_instance(
                     else:
                         value_config["Hamiltonian"]["Parameters"][backup_key] = value
                 simulator, duration = get_simulation_data(
-                    value_config, initial_state=None
+                    value_config, initial_state=initial_states.get(value, None)
                 )
                 values_data[value] = {"simulator": simulator}
                 print(
@@ -201,7 +202,7 @@ def load_simulator_instance(
                     save_data(
                         simulator,
                         analysis_name,
-                        initial_state_temp.format(value=fileValue),
+                        simulator_file_template.format(value=fileValue),
                         rootPath=data_folder,
                     )
             else:

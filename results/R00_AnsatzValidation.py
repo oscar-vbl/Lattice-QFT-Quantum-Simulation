@@ -21,12 +21,12 @@ from qiskit import transpile
 from pathlib import Path
 
 sys.path.append(Path(__file__).parent.parent.as_posix())
-from _config import PLOTS_FOLDER as plt_folder
-from _config import DATA_FOLDER as data_folder
-from Utils import getTimer, save_data, loadJsonConfig
-from SchwingerSimulation import SchwingerSimulation
-from ResultsAnalysis import calculate_global_gradient_variance
-from Plots import (
+from QuantumSimulation._config import PLOTS_FOLDER as plt_folder
+from QuantumSimulation._config import DATA_FOLDER as data_folder
+from QuantumSimulation.Utils import getTimer, save_data, loadJsonConfig
+from QuantumSimulation.SchwingerSimulation import SchwingerSimulation
+from QuantumSimulation.ResultsAnalysis import calculate_global_gradient_variance
+from QuantumSimulation.Plots import (
     plot_validation_ansatzes,
     plot_duration_ansatzes,
     plot_computational_resources,

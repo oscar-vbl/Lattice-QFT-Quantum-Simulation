@@ -1,5 +1,6 @@
-# Main file for Schwinger simulation
-
+"""
+Main file for Schwinger simulation.
+"""
 import sys
 import numpy as np
 import pandas as pd
@@ -7,18 +8,12 @@ import time
 from typing import Any, Mapping, Iterable
 from tqdm.auto import tqdm
 from qiskit.circuit.quantumcircuit import QuantumCircuit
-from circuitBuilder import buildCircuit
-from Operators import buildSchwingerHamiltonianTemporalGauge
-from Utils import getTimer, func_return
-from Calculations import (
-    calculateEnergy,
-    calculateVacuumPersistence,
-    calculateGaussLawViolation,
-    checkChargeSymmetry,
-    calculatePairCreation,
-    calculateElectricField,
-)
-from Calculations import (
+from .core.transpilation import apply_transpilation
+from .circuitBuilder import buildCircuit
+from .Operators import buildSchwingerHamiltonianTemporalGauge
+from .Calculations import checkChargeSymmetry
+from .Utils import getTimer, func_return
+from .observables import (
     BaseObservable,
     EnergyObservable,
     PersistenceObservable,
@@ -45,7 +40,6 @@ from qiskit_aer import AerSimulator
 from qiskit_aer.primitives import EstimatorV2, SamplerV2
 from qiskit_aer.noise import NoiseModel, depolarizing_error
 from qiskit_algorithms.gradients import ParamShiftEstimatorGradient
-from qiskit.transpiler.preset_passmanagers import generate_preset_pass_manager
 from scipy.optimize import minimize
 from scipy.sparse.linalg import expm_multiply
 
@@ -171,22 +165,12 @@ class SchwingerSimulation:
         # Transpile if we use a real estimator or a simulator with backend
         if self.estimator is not None and self.backend is not None:
             print(f"{getTimer()} INFO: Transpiling ansatz to ISA circuit...")
-
-            # Generate PassManager with the specified backend (AerSimulator or IBM Runtime)
-            pm = generate_preset_pass_manager(
-                optimization_level=1, backend=self.backend
+            self.ansatz, layout_circuits = apply_transpilation(
+                backend=self.backend,
+                circuit=self.ansatz,
+                layout_circuits=[self.hamiltonian_prep]
             )
-
-            # Transpile ansatz to the target backend's ISA using the PassManager
-            self.ansatz = pm.run(self.ansatz)
-            self.ansatz: QuantumCircuit
-
-            # When transpiling, manager can reorder physical qubits
-            # Hamiltonian topology must be adapted
-            if self.ansatz.layout is not None:
-                self.hamiltonian_prep = self.hamiltonian_prep.apply_layout(
-                    self.ansatz.layout
-                )
+            self.hamiltonian_prep = layout_circuits[0]
 
         # Get parameters that minimize initial ansatz energy
         if self.initial_state is None:
@@ -194,12 +178,21 @@ class SchwingerSimulation:
                 self.get_vacuum()
             )
         else:
-            self.vacuum_energy = calculateEnergy(
-                self.initial_state,
-                self.hamiltonian_prep,
-                self.estimator,
-                self.precision,
+            print(f"{getTimer()} INFO: Transpiling initial state to ISA circuit...")
+            self.initial_state, layout_circuits = apply_transpilation(
+                backend=self.backend,
+                circuit=self.initial_state,
+                layout_circuits=[self.hamiltonian_prep]
             )
+            self.hamiltonian_prep = layout_circuits[0]
+            energy_obs = EnergyObservable(self.hamiltonian_prep, self.precision)
+            if hasattr(self, "estimator") and self.estimator is not None:
+                pub = energy_obs.get_pub(self.initial_state)
+                result = self.estimator.run([pub]).result()
+                self.vacuum_energy = energy_obs.process_pub_result(result[0])[0]
+            else:
+                self.vacuum_energy = energy_obs.calculate_exact(self.initial_state)[0]
+
             self.vacuum_parameters = None
 
         print(f"{getTimer()} INFO: Initial energy = {self.vacuum_energy}")
@@ -252,8 +245,9 @@ class SchwingerSimulation:
         Initializes and returns the Backend and the appropriate Qiskit V2 Primitives (Estimator and Sampler)
         based on the backend configuration. Supports Aer simulators and real IBM Quantum hardware.
         """
-        backend_config = self.config.get("Backend", {})
-        if not backend_config:
+        backend_config    = self.config.get("Backend", {})
+        self.backend_type = backend_config.get("Type", None)
+        if not backend_config or not self.backend_type:
             self.backend_type = None
             self.precision = None
             print(
@@ -261,11 +255,11 @@ class SchwingerSimulation:
             )
             return None, None, None
 
-        self.backend_type = backend_config.get("Type", "Aer")
+        
         backend_options = backend_config.get("Options", {})
-        self.precision = backend_options.get("Precision", None)
-        shots = backend_options.get("Shots", None)
-        noise_model = backend_options.get("Noise Model", None)
+        self.precision  = backend_config.get("Precision", None)
+        shots           = backend_config.get("Shots", None)
+        noise_model     = backend_config.get("Noise Model", None)
 
         if self.backend_type == "StatevectorEstimator":
             print(
@@ -291,33 +285,62 @@ class SchwingerSimulation:
                 aer_noise_model = NoiseModel()
                 for error_params in noise_model.get("Errors", []):
                     error_type = error_params.get("Type")
+                    num_qubits = error_params.get("Num_Qubits", 1)
+                    gates      = error_params.get("Gates", [])
                     if error_type == "Depolarizing":
                         error_param = depolarizing_error(
                             error_params.get("Probability", 0.01),
-                            error_params.get("Num_Qubits", 1),
+                            num_qubits,
                         )
                     else:
                         print(
                             f"{getTimer()} WARNING: Noise model error type {error_type} not recognized. Skipping this error."
                         )
                         continue
-                    noise_model.add_all_qubit_quantum_error(
-                        error_param, error_params["Gates"]
+                    aer_noise_model.add_all_qubit_quantum_error(
+                        error_param, gates
                     )
             else:
                 aer_noise_model = None
 
-            aer_backend = AerSimulator(noise_model=aer_noise_model, **backend_options)
-            aer_options = {
-                "backend_options": backend_options  # Handles noise_model, coupling_map, etc.
-            }
+            aer_backend = AerSimulator(noise_model=aer_noise_model)
+
+            # Config estimator options
+            estimator_options: dict = {}
+            # Add noise model to backend options if specified
+            if aer_noise_model is not None:
+                estimator_options["backend_options"] = {"noise_model": aer_noise_model}
+
+            # Add additional backend options from config if specified
+            if backend_config.get("Backend Options"):
+                estimator_options.setdefault("backend_options", {}).update(
+                    backend_config["Backend Options"]
+                )
+            # Shots config
             if shots is not None:
-                aer_options = {
-                    **aer_options,
-                    "run_options": {"shots": shots},  # Handles shots for the Estimator
-                }
-            estimator = EstimatorV2(options=aer_options)
-            sampler = SamplerV2(options=aer_options)
+                # Add shots if specified
+                estimator_options["run_options"] = {"shots": shots}
+                estimator_options["default_precision"] = 1 / np.sqrt(shots)
+            elif self.precision is not None:
+                # Add default precision if shots not given
+                estimator_options["default_precision"] = self.precision
+
+            estimator = EstimatorV2(options=estimator_options)
+
+            # Config sampler options
+            sampler_options = {}
+            if aer_noise_model is not None:
+                sampler_options["backend_options"] = {"noise_model": aer_noise_model}
+            if backend_config.get("Backend Options"):
+                sampler_options.setdefault("backend_options", {}).update(
+                    backend_config["Backend Options"]
+                )
+
+            sampler = SamplerV2(
+                default_shots=shots if shots is not None else 1024,
+                options=sampler_options if sampler_options else None
+            )
+
             return aer_backend, estimator, sampler
 
         elif self.backend_type == "IBM_Runtime":
@@ -920,23 +943,19 @@ class SchwingerSimulation:
                     "StatevectorEstimator",
                     None,
                 ]:
-                    print(
-                        f"{getTimer()} INFO: Transpiling Trotter step {key} to ISA..."
-                    )
+                    print(f"{getTimer()} INFO: Transpiling Trotter step {key} to ISA...")
 
                     # Force PassManager to use same physical layout than VQE
-                    layout = (
+                    initial_layout = (
                         self.initial_state.layout
                         if hasattr(self.initial_state, "layout")
                         else None
                     )
-                    pm_trotter = generate_preset_pass_manager(
-                        optimization_level=1,
-                        backend=self.backend,
-                        initial_layout=layout,
+                    trotter_circuits[key], _ = apply_transpilation(
+                        self.backend,
+                        trotter_step_circuit,
+                        initial_layout=initial_layout
                     )
-
-                    trotter_circuits[key] = pm_trotter.run(trotter_step_circuit)
                 else:
                     # Ideal simulators
                     # Use twice decompose to ensure we get down to basic gates for the estimator/sampler
@@ -1051,7 +1070,7 @@ class SchwingerSimulation:
                                 )
 
                         # Set evolved state for next Trotter step
-                        states[trotter_key] = state
+                        states[trotter_key] = state.copy()
 
         # Process PUBS results if using estimator
         if self.estimator is not None and estimator_pubs["pubs"]:
@@ -1367,6 +1386,14 @@ class SchwingerSimulation:
         - spec_params: optional (default: None), Mapping, specific parameters for the observable calculation if needed.
         """
 
+        from QuantumSimulation.Calculations import (
+            calculateEnergy,
+            calculateVacuumPersistence,
+            calculateGaussLawViolation,
+            checkChargeSymmetry,
+            calculatePairCreation,
+            calculateElectricField,
+        )
         if observable == "Energy":
             value = calculateEnergy(state, self.hamiltonian_evol, estimator, precision)
         elif observable == "Persistence":

@@ -6,10 +6,9 @@ from qiskit.primitives import StatevectorEstimator, StatevectorSampler
 from pathlib import Path
 
 sys.path.append(Path(__file__).parent.parent.as_posix())
-from SchwingerSimulation import SchwingerSimulation
-from Calculations import calculateEnergy
-from Calculations import calculateVacuumPersistence
-from Operators import buildSchwingerHamiltonianTemporalGauge
+from QuantumSimulation.SchwingerSimulation import SchwingerSimulation
+from QuantumSimulation.observables import EnergyObservable, PersistenceObservable
+from QuantumSimulation.Operators import buildSchwingerHamiltonianTemporalGauge
 
 
 def test_full_simulation_pipeline_smoke_test():
@@ -253,14 +252,16 @@ def test_estimator_v2_parity():
     qc.cx(0, 1)  # Bell state
 
     observable = SparsePauliOp.from_list([("ZZ", 1.0), ("XX", 0.5)])
-
+    energy_obs = EnergyObservable(observable)
     # 2. Calculate with Statevector (no estimator)
     sv = Statevector(qc)
-    energy_exact = calculateEnergy(sv, observable, estimator=None)
+    energy_exact, _ = energy_obs.calculate_exact(sv)
 
     # 3. Calculate with QuantumCircuit (EstimatorV2)
     estimator = StatevectorEstimator()
-    energy_v2 = calculateEnergy(qc, observable, estimator=estimator)
+    pub = energy_obs.get_pub(qc)
+    result = estimator.run([pub]).result()
+    energy_v2, _ = energy_obs.process_pub_result(result[0])
 
     # 4. Validate results are close
     assert np.isclose(energy_exact, energy_v2, atol=1e-7), (
@@ -275,9 +276,14 @@ def test_sampler_vacuum_persistence():
     initial_circuit = QuantumCircuit(2)
     initial_circuit.h(0)
 
+    persistence_obs = PersistenceObservable(initial_circuit)
+
     # Case A: Null evolution (the state is the same)
     evolved_circuit_A = initial_circuit.copy()
-    pers_A = calculateVacuumPersistence(evolved_circuit_A, initial_circuit, sampler)
+    #pers_A = calculateVacuumPersistence(evolved_circuit_A, initial_circuit, sampler)
+    pub               = persistence_obs.get_pub(evolved_circuit_A)
+    res_samp          = sampler.run([pub]).result()
+    pers_A, _         = persistence_obs.process_pub_result(res_samp[0])
     assert np.isclose(pers_A, 1.0, atol=1e-2), (
         "The persistence should be 1 if there is no evolution."
     )
@@ -286,7 +292,10 @@ def test_sampler_vacuum_persistence():
     evolved_circuit_B = initial_circuit.copy()
     evolved_circuit_B.z(0)
     evolved_circuit_B.x(1)  # Orthogonal state
-    pers_B = calculateVacuumPersistence(evolved_circuit_B, initial_circuit, sampler)
+    #pers_B = calculateVacuumPersistence(evolved_circuit_B, initial_circuit, sampler)
+    pub               = persistence_obs.get_pub(evolved_circuit_B)
+    res_samp          = sampler.run([pub]).result()
+    pers_B, _         = persistence_obs.process_pub_result(res_samp[0])
     assert np.isclose(pers_B, 0.0, atol=1e-2), (
         "The persistence should be 0 for orthogonal states."
     )

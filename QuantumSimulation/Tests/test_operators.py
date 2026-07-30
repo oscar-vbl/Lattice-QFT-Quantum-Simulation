@@ -1,9 +1,6 @@
 import numpy as np
-import sys
-from pathlib import Path
 
-sys.path.append(Path(__file__).parent.parent.as_posix())
-from Operators import (
+from QuantumSimulation.Operators import (
     buildSchwingerHamiltonianTemporalGauge,
     buildChargeOperatorMinimal,
     gauss_operator,
