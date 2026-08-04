@@ -26,6 +26,8 @@ version: "0.1.0"
 
 date-released: "2026-08-04"
 
+doi: "10.5281/zenodo.21787495"
+
 repository-code: "https://github.com/oscar-vbl/Lattice-QFT-Quantum-Simulation"
 
 url: "https://github.com/oscar-vbl/Lattice-QFT-Quantum-Simulation"
