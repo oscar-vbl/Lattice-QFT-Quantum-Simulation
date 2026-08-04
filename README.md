@@ -4,6 +4,7 @@
 [![Qiskit](https://img.shields.io/badge/Qiskit-2.x-6929C4)](https://www.ibm.com/quantum/qiskit)
 [![Tests](https://github.com/oscar-vbl/Lattice-QFT-Quantum-Simulation/actions/workflows/tests.yml/badge.svg)](https://github.com/oscar-vbl/Lattice-QFT-Quantum-Simulation/actions/workflows/tests.yml)
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](LICENSE)
+[![DOI](https://zenodo.org/badge/1103332742.svg)](https://doi.org/10.5281/zenodo.21787494)
 
 A modular research framework for the quantum simulation of lattice quantum field theories and gauge models using variational and circuit-based quantum algorithms.
 
@@ -237,8 +238,11 @@ If this software contributes to academic work, please cite the specific reposito
 @software{vicente_blazquez_lattice_qft_quantum_simulation,
   author  = {Vicente Blázquez, Oscar},
   title   = {{Lattice-QFT-Quantum-Simulation}},
-  url     = {https://github.com/oscar-vbl/Lattice-QFT-Quantum-Simulation},
-  note    = {Quantum simulation framework for lattice quantum field theories}
+  year    = {2026},
+  note    = {Quantum simulation framework for lattice quantum field theories},
+  version = {0.1.0},
+  doi     = {10.5281/zenodo.21787494},
+  url     = {https://doi.org/10.5281/zenodo.21787494}
 }
 ```
 
