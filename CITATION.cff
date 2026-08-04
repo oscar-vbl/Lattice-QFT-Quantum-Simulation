@@ -1,0 +1,47 @@
+cff-version: 1.2.0
+
+message: >-
+  If you use this software in academic work, please cite the version
+  of the repository used in your study.
+
+type: software
+
+title: "Lattice-QFT-Quantum-Simulation"
+
+authors:
+  - given-names: "Oscar"
+    family-names: "Vicente Blázquez"
+
+abstract: >-
+  A modular research framework for the quantum simulation of lattice
+  quantum field theories and gauge models using variational and
+  circuit-based quantum algorithms. The current reference implementation
+  focuses on the Schwinger model in 1+1-dimensional lattice quantum
+  electrodynamics and includes variational vacuum preparation,
+  real-time Suzuki-Trotter evolution, configurable quantum quenches,
+  modular physical observables, uncertainty analysis, ansatz
+  benchmarking and reproducible research workflows.
+
+version: "0.1.0"
+
+date-released: "2026-08-04"
+
+repository-code: "https://github.com/oscar-vbl/Lattice-QFT-Quantum-Simulation"
+
+url: "https://github.com/oscar-vbl/Lattice-QFT-Quantum-Simulation"
+
+license: "MIT"
+
+keywords:
+  - "quantum simulation"
+  - "lattice quantum field theory"
+  - "lattice gauge theory"
+  - "Schwinger model"
+  - "quantum electrodynamics"
+  - "variational quantum algorithms"
+  - "quantum computing"
+  - "Qiskit"
+  - "real-time quantum dynamics"
+  - "vacuum persistence"
+  - "Suzuki-Trotter evolution"
+  - "research software"
