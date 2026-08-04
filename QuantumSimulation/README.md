@@ -1,80 +1,266 @@
 # QuantumSimulation
 
-Technical documentation for quantum simulation modules.
+Technical documentation for the core quantum-simulation package.
 
-## Core Modules
+`QuantumSimulation` provides reusable components for constructing lattice Hamiltonians, preparing quantum states, executing real-time dynamics and evaluating physical observables. The current reference model is the \(1+1\)-dimensional Schwinger model, while the internal architecture is intended to support broader lattice-field-theory and quantum many-body applications.
 
-### `SchwingerSimulation.py`
+## Design Principles
 
-The main orchestration class. Handles:
-- Hamiltonian construction from config
-- Ansatz circuit building
-- VQE optimization for vacuum state
-- Temporal evolution with observable tracking
+The package follows several guiding principles:
 
-**Key Methods**:
-- `run_simulation()`: Execute full pipeline
-- `get_hamiltonian()`: Build SparsePauliOp
-- `get_ansatz()`: Construct parametrized circuit
-- `get_vacuum()`: Optimize and return ground state
+- **Modularity:** Hamiltonians, ansatzes, execution engines and observables are separated where practical.
+- **Reproducibility:** Physical and algorithmic parameters are supplied through configuration files.
+- **Extensibility:** New observables and circuit families should be addable without rewriting the complete workflow.
+- **Validation:** Exact calculations, symmetry checks and automated tests provide reference points for approximate algorithms.
+- **Backend awareness:** Ideal, simulator-based and hardware-oriented execution paths are treated as distinct use cases.
+- **Research usability:** Stored states, tabular outputs and analysis scripts support repeatable parameter studies.
 
-### `Operators.py`
+## Package Layout
 
-Hamiltonian and observable definitions:
-- `buildSchwingerHamiltonianTemporalGauge()`: Main Hamiltonian (temporal gauge, e=1)
-- `gauss_operator()`: Charge constraint operator
-- `measure_electric_field()`: Sample ⟨E⟩ from state
+```text
+QuantumSimulation/
+├── Tests/                     # Unit and integration tests
+├── core/                      # Core execution and evolution infrastructure
+├── observables/               # Modular observable implementations
+├── Ansatzes.py                # Variational circuit families
+├── Calculations.py            # Calculation helpers and compatibility layer
+├── Operators.py               # Hamiltonians, charges and field operators
+├── Plots.py                   # Plotting functions
+├── ResultsAnalysis.py         # Fitting and physical post-processing
+├── SchwingerSimulation.py     # High-level simulation interface
+├── Utils.py                   # I/O, configuration and helper utilities
+├── __init__.py
+├── _config.py                 # Internal project paths
+└── circuitBuilder.py          # Circuit-construction helpers
+```
 
-### `circuitBuilder.py`
+## High-Level Workflow
 
-Quantum circuit utilities:
-- `buildCircuit()`: Create base circuit from config
-- `addGate()`: Add parametrized gates
-- Supports EfficientSU2, n_local, custom ansatzes
+The main simulation pipeline is:
 
-### `Calculations.py`
+```text
+Configuration
+    ↓
+Hamiltonian and constraints
+    ↓
+Ansatz construction
+    ↓
+Vacuum or initial-state preparation
+    ↓
+Quench / real-time evolution
+    ↓
+Observable evaluation
+    ↓
+Uncertainty and post-processing
+    ↓
+DataFrames, saved states and figures
+```
 
-Observable calculations on quantum states:
-- `calculateEnergy()`: ⟨ψ|H|ψ⟩
-- `calculateVacuumPersistence()`: ⟨ψ|ψ₀⟩²
-- `calculatePairCreation()`: Pair creation rate
-- `checkChargeSymmetry()`: Validate U(1) constraint
+The public entry point is the `SchwingerSimulation` class.
 
-### `Plots.py`
+```python
+from QuantumSimulation import SchwingerSimulation
+from QuantumSimulation.Utils import loadJsonConfig
 
-Visualization:
-- `plot_simulated_vs_analytical()`: Persistence + Schwinger overlay
-- `plot_persistenece_vs_time_regimes()`: Mark Zeno/Schwinger/revival regions
-- `plot_gamma_vs_qubitNum()`: Decay rate scaling
-- `plot_gamma_vs_e0()`: e0-field dependence
+config = loadJsonConfig("configs/example.json")
+simulator = SchwingerSimulation(config)
+simulator.run_simulation()
+```
 
-### `ResultsAnalysis.py`
+## `SchwingerSimulation.py`
 
-Post-simulation analysis:
-- `fit_persistence()`: Fit exponential decay identifying physical regimes
-  - Automatically detects: Zeno (initial), Schwinger (exponential), Interference, Revivals
-  - The fit focuses on the **Schwinger region** for Γ extraction.
-- `check_regime()`: Verify simulation is in valid physical regime
+`SchwingerSimulation` is the high-level orchestration class. It coordinates the configured simulation without requiring analysis notebooks to reproduce low-level setup logic.
 
-### `Utils.py`
+Principal responsibilities include:
 
-I/O and helpers:
-- `loadJsonConfig()`: Parse configuration files
-- `save_data()` / `load_data()`: Persist DataFrames and circuits
-- `getTimer()`: Timestamped logging
+- reading and validating configuration data;
+- constructing the preparation and evolution Hamiltonians;
+- creating a variational ansatz;
+- optimizing or loading an initial state;
+- configuring quantum primitives or direct numerical execution;
+- applying quenches and real-time evolution;
+- evaluating selected observables;
+- collecting values and uncertainties in structured outputs.
 
-### `_config.py`
+Typical public attributes after execution include:
 
-Path configuration (uses `pathlib`):
-- `PROJECT_ROOT`
-- `PLOTS_FOLDER`, `DATA_FOLDER`, `CONFIGS_FOLDER`
-- All paths relative to project root
+```python
+simulator.initial_state
+simulator.vacuum_energy
+simulator.evolution_data
+simulator.evolution_error
+simulator.all_trotter_evolution_data
+simulator.all_trotter_evolution_error
+```
 
-## Configuration Files
+The exact set of populated attributes depends on the selected workflow and configuration.
 
-### `Configs/`
+## `core/`
 
-JSON Hamiltonian parameters. Example structure:
+The `core` package contains lower-level execution infrastructure extracted from the high-level simulation class. Its purpose is to keep backend setup, evolution strategies and reusable numerical logic independent from the physical analysis notebooks.
+
+Depending on the active implementation, core functionality may include:
+
+- execution-engine configuration;
+- primitive setup;
+- incremental state evolution;
+- Trotter-step construction;
+- result collection;
+- shared simulation data structures.
+
+This package is expected to evolve as execution paths are further separated into direct-statevector, Aer and hardware-oriented engines.
+
+## `observables/`
+
+The observable framework defines quantities evaluated during state preparation or temporal evolution.
+
+Current observable families include:
+
+- energy;
+- vacuum persistence;
+- pair creation;
+- electric field;
+- Gauss-law violation.
+
+An observable may implement different evaluation routes:
+
+- exact calculation from a `Statevector`;
+- Estimator-based expectation values;
+- Sampler-based measurement circuits;
+- post-processing of grouped primitive results;
+- uncertainty propagation.
+
+A simplified conceptual interface is:
+
+```python
+class Observable:
+    name: str
+    primitive_type: str
+
+    def get_operators(self):
+        ...
+
+    def get_pub(self, circuit):
+        ...
+
+    def calculate_exact(self, state):
+        ...
+
+    def process_result_data(self, values, errors):
+        ...
+```
+
+New observables should keep physical operator construction separate from plotting and high-level interpretation.
+
+## `Operators.py`
+
+`Operators.py` defines model Hamiltonians and physical operators in qubit form.
+
+The current implementation includes:
+
+- the Schwinger Hamiltonian in temporal gauge;
+- staggered charge operators;
+- total-charge operators;
+- electric-field operators derived from Gauss's law;
+- pair-number operators;
+- Gauss-law generators.
+
+Operator conventions, lattice indexing and boundary conditions should be documented explicitly whenever new models are added.
+
+## `Ansatzes.py`
+
+`Ansatzes.py` contains variational circuit families used for state preparation and benchmarking.
+
+Supported or explored ansatz categories include:
+
+- hardware-efficient circuits;
+- excitation-preserving circuits;
+- Hamiltonian variational ansatzes;
+- custom physics-informed constructions.
+
+The ansatz-validation workflows compare candidates through quantities such as:
+
+- ground-state energy error;
+- state fidelity;
+- convergence behaviour;
+- optimization time;
+- transpiled depth;
+- entangling-gate count;
+- gradient-variance or barren-plateau indicators.
+
+The goal is not to define a universally optimal circuit, but to provide reproducible criteria for selecting an ansatz for a given physical regime and execution target.
+
+## `circuitBuilder.py`
+
+This module contains reusable utilities for constructing quantum circuits from configuration data.
+
+Responsibilities may include:
+
+- initial-state preparation;
+- parameterized layers;
+- entanglement patterns;
+- supported Qiskit circuit-library ansatzes;
+- custom gate insertion;
+- circuit composition.
+
+## `Calculations.py`
+
+`Calculations.py` contains shared numerical helpers and compatibility functions. As the observable-oriented architecture develops, new code should generally use the classes under `observables/` rather than legacy `calculate...` functions.
+
+The compatibility layer may remain available temporarily so earlier notebooks and scripts continue to run during migration.
+
+## `ResultsAnalysis.py`
+
+`ResultsAnalysis.py` provides physical post-processing that is intentionally kept outside the simulation engine.
+
+Current analysis capabilities include:
+
+- exponential persistence fitting;
+- temporal-window selection;
+- vacuum-decay-rate extraction;
+- comparison with analytical estimates;
+- finite-size and parameter scans;
+- uncertainty-aware regression;
+- regime diagnostics.
+
+Future analysis modules may cover excited-state spectroscopy, topological sectors, entanglement scaling and fidelity-based phase diagnostics.
+
+## `Plots.py`
+
+`Plots.py` contains reusable visualization functions for simulation and analysis outputs.
+
+Examples include:
+
+- ansatz comparisons;
+- energy and fidelity convergence;
+- circuit-resource plots;
+- persistence curves and temporal regimes;
+- decay-rate scaling;
+- field-dependence studies;
+- uncertainty bands and analytical comparisons.
+
+Plotting functions should receive processed data rather than reproduce physical calculations internally.
+
+## `Utils.py`
+
+General-purpose utilities include:
+
+- configuration loading;
+- DataFrame and state persistence;
+- simulator-instance loading;
+- path handling;
+- logging and timing;
+- formatting helpers.
+
+## `_config.py`
+
+Internal project paths are centralized here so notebooks and scripts do not depend on machine-specific absolute paths.
+
+## Configuration Model
+
+Simulations are controlled through JSON files under the repository-level `configs/` directory.
+
+A simplified example is:
 
 ```json
 {
@@ -85,125 +271,167 @@ JSON Hamiltonian parameters. Example structure:
       "L": 10,
       "a": 0.5,
       "m": 0.1,
-      "e0": 0.8
-    },
-    "Lambda_Charge_Penalty": "Variable"
+      "e0": 0.0
+    }
   },
   "Ansatz": {
-    "Type": "EfficientSU2",
-    "Reps": 2,
-    "Entanglement": "full"
+    "Type": "ExcitationPreserving",
+    "Reps": 2
   },
   "Temporal Evolution": {
-    "Total_Time": 10.0,
+    "Total_Time": 5.0,
     "Time_Steps": 100,
     "Quench": {
-      "Parameters_to_Change": {"e0": 0.5}
+      "Parameters_to_Change": {
+        "e0": 0.5
+      }
+    },
+    "Observables": {
+      "Observables_List": [
+        "Persistence",
+        "Energy",
+        "Electric_Field"
+      ]
     }
   },
   "Backend": {
-    "Type": "AerSimulator"
+    "Type": "Aer",
+    "Options": {
+      "Shots": 1024
+    }
   }
 }
 ```
 
+The exact schema may evolve. Use the current files under `configs/` as executable references.
 
-## Analysis Workflow
+## Execution Modes
 
-### `Results/R00_AnsatzValidation.py`
+The package supports, or is being organized around, several execution strategies:
 
-Script to study different ansatzes and validate the choice:
+### Direct numerical execution
 
-1. **Ansatz Choice**: HVA (Physics Informed) and ExcitationPreserving (Hardware-Efficient)
-2. **Error in fidelity and energy**
-3. **Convergence time**
-4. **Computational resources**: Number of CNOTs and transpiled circuit depth
-5. **Barren Plateaus Diagnosis**: Check of the exponential decay of the gradient variance
+Suitable for ideal validation and small systems. States are evolved directly and observables can be evaluated exactly.
 
-Output saved to `../data/` and `../plots/`.
+### Aer simulation
 
-### `Results/R01_Persistence.py`
+Suitable for optimized local simulation, finite-shot studies, optional noise models and backend-like execution.
 
-Script to calculate vacuum persistence related results:
+### Primitive-oriented execution
 
-1. **Qubit Scaling**: Fit $\Gamma(L)$ to find optimal system size
-2. **Best Fit**: Show exponential fit for best $L$ with Schwinger overlay
-3. **Regime Visualization**: Plot persistence marking Zeno/Schwinger/revival boundaries
-4. **Field Dependence**: Scan $e_0$ values, show $\Gamma$ vs background field
-5. **Log Field Dependence**: Log-log plot for Schwinger exponential suppression
+Suitable for Qiskit Estimator/Sampler workflows and future hardware execution. Estimator observables are grouped by state where possible to reduce redundant primitive calls.
 
-Output saved to `../data/` and `../plots/`.
+These execution strategies should produce compatible high-level outputs even when their internal implementations differ.
 
-## Running Simulations
+## Temporal Evolution and Trotter Studies
 
-### Quick Start
+Real-time dynamics are generated from configurable Suzuki-Trotter decompositions. Multiple temporal resolutions can be evaluated in the same workflow to study discretization effects.
+
+Representative outputs are organized by Trotter key:
 
 ```python
-from SchwingerSimulation import SchwingerSimulation
-from Utils import loadJsonConfig
-
-# Load pre-configured simulation
-config = loadJsonConfig("SchwingerSimulation_v0.json")
-
-# Create and run
-simulator = SchwingerSimulation(config)
-simulator.run_simulation()
-
-# Results available immediately
-print(simulator.evolution_data)
+simulator.all_trotter_evolution_data["dt"]
+simulator.all_trotter_evolution_data["dt_half"]
 ```
 
-### Batch Simulation (Different L)
+Associated error structures are stored separately where available.
 
-See `Results/R01_Persistence.py` for the pattern—it sweeps system sizes and saves data locally.
+Richardson-style extrapolation can be used in downstream analysis to estimate or reduce leading Trotter errors, provided the assumed error scaling is valid in the selected regime.
 
-### Custom Configuration
+## Research Notebooks
 
-Modify `Configs/SchwingerSimulation_v0.json` or create new config, then instantiate:
+The repository-level `results/` directory contains reproducible research workflows built on top of this package.
+
+Representative studies include:
+
+### Ansatz validation
+
+- energy and fidelity accuracy;
+- optimizer convergence;
+- circuit depth and entangling-gate counts;
+- system-size scaling;
+- gradient-variance diagnostics.
+
+### Vacuum persistence
+
+- finite-size scans;
+- temporal-regime identification;
+- uncertainty-aware exponential fits;
+- effective vacuum-decay rates;
+- field-strength dependence;
+- Schwinger-like non-perturbative scaling.
+
+These workflows illustrate the package API. They do not limit the physical scope of future studies.
+
+## Data Products
+
+Simulation outputs are commonly exposed as pandas DataFrames indexed by physical time.
+
+Example:
 
 ```python
-import json
-with open("MyConfig.json") as f:
-    my_config = json.load(f)
-sim = SchwingerSimulation(my_config)
-sim.run_simulation()
+simulator.evolution_data.head()
+simulator.evolution_error.head()
 ```
 
-## Data Format
+Possible columns include:
 
-### `evolution_data` (DataFrame)
+```text
+Persistence
+Energy
+Electric_Field_0
+Electric_Field_1
+Pair_Creation_Electrons
+Pair_Creation_Positrons
+Gauss_Law_Violation
+```
 
-Index: Time (float)  
-Columns example (the ones they appear in the config json):
-- `Persistence` (float): Vacuum overlap $|\langle\psi(t)|\psi_0\rangle|^2$
-- `Energy` (float): Instantaneous energy ⟨E(t)⟩
-- `Electric_Field_Avg` (float): Average ⟨E⟩
-- `Pair_Creation` (float): $Q(t)$ rate
-- `Gauss_Law_Violation` (float): Residual $|Q̂|$
-
-### `initial_state` (Statevector)
-
-Qiskit Statevector object—bare quantum state after VQE.  
-Can be exported via `qpy.dump()` for reproducibility.
+Column availability depends on the configured observables.
 
 ## Testing
 
-Run unit tests:
+From the repository root:
+
 ```bash
-python -m pytest Tests/
+python -m pytest QuantumSimulation/Tests
 ```
 
-Or from QuantumSimulation folder:
-```python
-import Tests.tests_operators as tests
-tests.test_hamiltonian_structure()
-```
+The test suite covers, as applicable:
 
-## Future Extensions
+- Hamiltonian structure and Hermiticity;
+- charge symmetry;
+- gauge-related operators;
+- ansatz and circuit construction;
+- observable calculations;
+- end-to-end simulation workflows;
+- multiple Trotter configurations;
+- algorithmic-mitigation paths.
 
-- [ ] Tensor Networks Architecture
-- [ ] Advanced Physical Results
+## Development Guidelines
 
-## Disclaimer
+When extending the package:
 
-Creation of README.md files has been assisted by AI.
+1. keep physical conventions explicit;
+2. add tests for new Hamiltonians or observables;
+3. avoid embedding analysis-specific logic in the simulation engine;
+4. expose results through stable data structures;
+5. preserve compatibility with configuration-driven workflows;
+6. document assumptions about boundaries, gauge choice and normalization;
+7. validate approximate methods against exact small-system references.
+
+## Planned Extensions
+
+Potential extensions include:
+
+- excited-state solvers and spectral gaps;
+- vacuum topology and symmetry-sector studies;
+- entanglement entropy and mutual information;
+- fidelity susceptibility and geometric phases;
+- time-dependent field protocols;
+- tensor-network-inspired methods;
+- additional lattice gauge theories;
+- noise-aware and hardware-executed simulations.
+
+## Scope
+
+The purpose of `QuantumSimulation` is not only to reproduce one Schwinger-effect calculation. The package is intended as a reusable research environment for developing, validating and comparing quantum-simulation methods for lattice quantum field theories and related many-body systems.
