@@ -1,276 +1,253 @@
 # Lattice-QFT-Quantum-Simulation
-![Python](https://img.shields.io/badge/python-3.10%20%7C%203.11%20%7C%203.12-blue)
-![Qiskit](https://img.shields.io/badge/qiskit-1.0+-6133BD)
-[![Tests](https://github.com/oscar-vbl/Lattice-QFT-Quantum-Simulation/actions/workflows/tests.yml/badge.svg)](https://github.com/oscar-vbl/Lattice-QFT-Quantum-Simulation/actions/workflows/tests.yml)
 
-Quantum simulation of the **Schwinger effect** in 1+1D lattice QED on NISQ quantum computers using Qiskit.
+[![Python](https://img.shields.io/badge/python-3.10%20%7C%203.11%20%7C%203.12-blue)](https://www.python.org/)
+[![Qiskit](https://img.shields.io/badge/Qiskit-2.x-6929C4)](https://www.ibm.com/quantum/qiskit)
+[![Tests](https://github.com/oscar-vbl/Lattice-QFT-Quantum-Simulation/actions/workflows/tests.yml/badge.svg)](https://github.com/oscar-vbl/Lattice-QFT-Quantum-Simulation/actions/workflows/tests.yml)
+[![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](LICENSE)
+
+A modular research framework for the quantum simulation of lattice quantum field theories and gauge models using variational and circuit-based quantum algorithms.
+
+The current reference implementation focuses on the **Schwinger model**, quantum electrodynamics in \(1+1\) dimensions. The model provides a compact setting for studying non-perturbative field-theory phenomena, gauge constraints, vacuum structure and real-time dynamics on gate-based quantum computers. The software architecture is intended to evolve beyond this first use case through additional models, observables and simulation methods.
+
+> [!NOTE]
+> This repository is under active research development. Interfaces, configuration schemas and analysis workflows may evolve before a stable release.
 
 ## Overview
 
-This repository implements the quantum simulation of non-perturbative QED phenomena on gate-based quantum computers. Specifically, it simulates the **Schwinger pair production** (electron-positron pair creation from the vacuum under strong electric fields) in (1+1)-dimensional lattice QED, bridging lattice gauge theory with variational quantum algorithms.
+Quantum simulation offers a route for investigating strongly correlated systems and real-time quantum dynamics that can become difficult for conventional classical approaches. Lattice formulations provide a finite-dimensional representation in which field-theory Hamiltonians can be mapped to qubits and studied with quantum algorithms.
 
-Some results and examples can be viewed as notebooks at QuantumSimulation/Results (by the moment, analysis of ansatzes and persistence).
+This repository provides reusable infrastructure for:
 
-### Key Features
+- constructing lattice Hamiltonians and symmetry operators;
+- preparing vacuum and low-energy states with variational algorithms;
+- comparing hardware-efficient and physics-informed ansatzes;
+- simulating real-time evolution and parameter quenches;
+- evaluating modular physical observables;
+- estimating statistical and algorithmic uncertainties;
+- benchmarking quantum circuits and optimization workflows;
+- producing reproducible numerical studies and research notebooks.
 
-- **Main Implementation**: Schwinger effect simulation in 1+1D lattice QED
-- **Variational Quantum Eigensolver (VQE)** for vacuum state preparation
-- **Time evolution** using Suzuki-Trotter decomposition
-- **Observable calculations**: vacuum persistence, pair creation, Gauss law violations
+## Current Reference Model
 
-## Physics Background
+The framework currently implements the lattice Schwinger model in temporal gauge, including workflows for:
 
-### The Schwinger Model
+- staggered-fermion Hamiltonian construction;
+- charge-sector and Gauss-law diagnostics;
+- variational vacuum preparation;
+- Suzuki-Trotter real-time evolution;
+- background-field quenches;
+- vacuum-persistence probability;
+- pair-creation observables;
+- electric-field observables;
+- finite-size and field-strength scans;
+- Trotter-error studies and Richardson-style extrapolation.
 
-The Schwinger model is the simplest non-trivial gauge theory—1+1D QED with one Dirac fermion coupled to a U(1) gauge field. While soluble classically, it exhibits quintessential QED features:
+The Schwinger model is treated as the first research application of the framework, not as its final scope.
 
-- **Non-perturbative pair production** from the vacuum
-- **Charge confinement** (linearly rising potential between separated charges)
-- **Dynamical mass generation**
+## Main Features
 
-#### Hamiltonian (Temporal Gauge)
+### Configurable simulation pipeline
 
-The lattice Hamiltonian simulated in this code, with $e=1$ (natural units), is:
+- JSON-driven physical, variational and execution parameters
+- Exact statevector, Aer and primitive-oriented workflows
+- Reusable initial states and saved simulation data
+- Multiple Trotter discretizations within the same experiment
+- Pluggable quench parameters and observable selections
 
-$$H = \sum_n \left[\frac{w}{2}\left(\psi_n^\dagger e^{i\theta_n}\psi_{n+1} + \text{h.c.}\right) + J E_n^2 + m(-1)^n \psi_n^\dagger \psi_n\right]$$
+### Variational state preparation
 
-Where:
-- $\psi_n$: fermion annihilation operator at site $n$
-- $\theta_n = a E_n$: gauge angle (integrated electric field)
-- $E_n$: electric field configuration
-- $w = 1/(2a)$: hopping amplitude ($a$ = lattice spacing)
-- $J = a/2$: gauge coupling
-- $m$: fermion mass (staggered term represents relativistic dispersion)
+- Variational Quantum Eigensolver workflows
+- Hardware-efficient ansatzes
+- Excitation-preserving circuits
+- Hamiltonian variational ansatzes
+- Ansatz benchmarking through energy, fidelity and circuit resources
+- Optimization-landscape and barren-plateau diagnostics
 
-**Parameters**:
-- $L$: Number of lattice sites (qubits)
-- $a$: Lattice spacing (controls continuum limit)
-- $m$: Fermion mass
-- $e_0$: Background electric field in the first site of the lattice
+### Modular observables
 
-### Schwinger Pair Production Formula
+- Energy
+- Vacuum persistence
+- Pair creation
+- Electric field
+- Gauss-law violation
 
-In the strong-field regime ($eE \gg m^2$), the exponential decay rate of vacuum persistence is:
+The observable interface is designed so additional physical and quantum-information quantities can be introduced without rewriting the simulation engine.
 
-$$\Gamma = \int dE \ \mathcal{P}(E), \ \mathcal{P}(E) = \frac{eE}{2\pi} \exp\left(-\frac{\pi m^2}{eE}\right)$$
+### Validation and uncertainty analysis
 
-This non-perturbative formula predicts exponential suppression of the ground state after external field application—the **Schwinger effect**.
+- Charge-symmetry checks
+- Gauge-constraint diagnostics
+- Exact-statevector references
+- Statistical measurement uncertainty
+- Trotter-discretization comparisons
+- Fit and finite-window uncertainties in downstream analyses
+- Automated tests through GitHub Actions
 
-## Project Structure
+## Repository Structure
 
-```
-└── QuantumSimulation/
-    ├── SchwingerSimulation.py       # Main simulation class
-    ├── Operators.py                 # Hamiltonian & observable definitions
-    ├── circuitBuilder.py            # Quantum circuit construction
-    ├── Calculations.py              # Observable calculations
-    ├── Plots.py                     # Visualization utilities
-    ├── Utils.py                     # Helper functions & I/O
-    ├── ResultsAnalysis.py           # Persistence fit & regime analysis
-    ├── _config.py                   # Path configuration
-    ├── Configs/                     # Hamiltonian parameter JSON configs
-    ├── Results/
-    │   └── R00_ResultsCommon.py     # Reusable functions for results analysis
-    │   └── R00_AnsatzValidation.py  # Ansatz study and choice
-    │   └── R00_Validation.ipynb     # Ansatz study and choice notebook
-    │   └── R01_Persistence.py       # Vacuum persistence analysis
-    │   └── R01_Persistence.ipynb    # Vacuum persistence analysis in notebook format
-    └── Tests/
-        └── tests_operators.py       # Unit tests
-        └── tests_simulation.py      # Unit tests
-```
-
-Paths to save data are defined in QuantumSimulation/_config.py.
-Folders can be modified in that script if needed.
-
-## Workflow: SchwingerSimulation Class
-
-The main `SchwingerSimulation` class orchestrates the full quantum simulation. Understanding its workflow is essential:
-
-### 1. **Initialization**
-```python
-from QuantumSimulation import SchwingerSimulation
-import json
-
-with open("Configs/SchwingerSimulation_v0.json") as f:
-    config = json.load(f)
-
-simulator = SchwingerSimulation(config)
-```
-
-### 2. **Configuration Structure**
-
-The JSON config specifies all parameters:
-
-```json
-{
-  "QubitsNumber": 10,
-  "Hamiltonian": {
-    "Type": "SchwingerTemporalGauge",
-    "Parameters": {
-      "L": 10,          // Lattice sites
-      "a": 0.5,         // Spacing
-      "m": 0.1,         // Mass
-      "e0": 0.0         // Initial field
-    }
-  },
-  "Ansatz": {
-    "Type": "EfficientSU2",
-    "Reps": 2
-  },
-  "Temporal Evolution": {
-    "Total_Time": 10.0,
-    "Time_Steps": 100,
-    "Quench": {
-      "Parameters_to_Change": {"e0": 0.5}
-    }
-  }
-}
-```
-
-### 3. **Full Simulation Pipeline** (called via `run_simulation()`)
-
-The class internally executes these steps in sequence:
-
-```
-┌─────────────────────────────────┐
-│ 1. Build Hamiltonian            │  (SchwingerSimulation.get_hamiltonian)
-│    ↓ Builds SparsePauliOp from  │
-│      config parameters          │
-└──────────────┬──────────────────┘
-               ↓
-┌─────────────────────────────────┐
-│ 2. Check Charge Symmetry (U(1)) │  (Operators.checkChargeSymmetry)
-│    ↓ Validate Gauss law         │
-└──────────────┬──────────────────┘
-               ↓
-┌─────────────────────────────────┐
-│ 3. Add Penalty Term (optional)  │  (Ensure Gauss law constraint)
-│    ↓ H → H + λ·Q̂²               │
-└──────────────┬──────────────────┘
-               ↓
-┌──────────────────────────────────────────────┐
-│ 4. Build Ansatz Circuit                      │  (SchwingerSimulation.get_ansatz)
-│    ↓ EfficientSU2, ExcitationPreserving, ... │
-└──────────────┬───────────────────────────────┘
-               ↓
-┌─────────────────────────────────┐
-│ 5. VQE: Optimize Vacuum State   │  (SchwingerSimulation.get_vacuum)
-│    ↓ Minimize ⟨ψ|H|ψ⟩            │
-│    ↓ Return |ψ_vac⟩ & E_0       │
-└──────────────┬──────────────────┘
-               ↓
-┌─────────────────────────────────┐
-│ 6. Temporal Evolution (optional)│  (SchwingerSimulation.evolve_state)
-│    ↓ Apply time-dependent H(t)  │
-│    ↓ Quench params. Ex: m, e0   │
-│    ↓ Quench: H₀(e0=0) → H(e0)   │
-│    ↓ Evolve |ψ_vac⟩ for time T  │
-└──────────────┬──────────────────┘
-               ↓
-┌─────────────────────────────────┐
-│ 7. Calculate Observables        │  (Calculations.*)
-│    ↓ Persistence ⟨ψ|ψ₀⟩²         │
-│    ↓ Pair creation Q̂            │
-│    ↓ Electric field ⟨Ê⟩          │
-└─────────────────────────────────┘
-```
-
-All data is stored in:
-- `simulator.evolution_data` (pandas DataFrame with time series)
-- `simulator.initial_state` (optimized vacuum Statevector)
-- `simulator.vacuum_energy` (ground state energy)
-
-### 4. **Imports Used Inside the Class**
-
-Key imports and their roles:
-
-```python
-from circuitBuilder import buildCircuit, addGate               # Circuit construction
-from Operators import buildSchwingerHamiltonianTemporalGauge  # Hamiltonian
-from Calculations import calculateEnergy, calculateVacuumPersistence  # Observables
-from qiskit_aer import AerSimulator                             # Statevector sim
-from scipy.optimize import minimize                             # VQE optimizer
-```
-
-## Usage Example
-
-### Basic Simulation
-
-```python
-from QuantumSimulation import SchwingerSimulation
-import json
-
-# Load configuration
-with open("QuantumSimulation/Configs/SchwingerSimulation_v0.json") as f:
-    config = json.load(f)
-
-# Create simulator
-simulator = SchwingerSimulation(config)
-
-# Run full pipeline: VQE + time evolution
-simulator.run_simulation()
-
-# Access results
-print(f"Ground state energy: {simulator.vacuum_energy:.4f}")
-print(f"Evolution data shape: {simulator.evolution_data.shape}")
-
-# Plot persistence decay
-import matplotlib.pyplot as plt
-plt.plot(simulator.evolution_data.index, simulator.evolution_data["Persistence"])
-plt.xlabel("Time"); plt.ylabel("Vacuum Persistence")
-plt.show()
-```
-
-### Analysis: Fit Persistence to Schwinger Formula
-
-```python
-from QuantumSimulation.ResultsAnalysis import fit_persistence
-
-# Fit exponential decay and compare with Schwinger prediction
-gamma_sim, gamma_analytical, gamma_err, eE, cut_offs = fit_persistence(
-    simulator.evolution_data, 
-    config, 
-    initial_state=simulator.initial_state,
-    use_offset=False
-)
-
-print(f"Simulated decay rate Γ: {gamma_sim:.4f} ± {gamma_err:.4f}")
-print(f"Schwinger predicts Γ: {gamma_analytical:.4f}")
-print(f"Relative error: {abs(gamma_sim - gamma_analytical)/gamma_analytical * 100:.1f}%")
-print(f"Regime boundaries: {cut_offs}")
+```text
+Lattice-QFT-Quantum-Simulation/
+├── .github/
+│   └── workflows/                 # Continuous integration
+├── OtherScripts/                  # Auxiliary or exploratory scripts
+├── QuantumSimulation/
+│   ├── Tests/                     # Unit and integration tests
+│   ├── core/                      # Core execution infrastructure
+│   ├── observables/               # Observable implementations
+│   ├── Ansatzes.py                # Variational circuit families
+│   ├── Calculations.py            # Compatibility and calculation utilities
+│   ├── Operators.py               # Hamiltonians and physical operators
+│   ├── Plots.py                   # Visualization utilities
+│   ├── README.md                  # Technical package documentation
+│   ├── ResultsAnalysis.py         # Post-processing and fitting
+│   ├── SchwingerSimulation.py     # High-level simulation interface
+│   ├── Utils.py                   # I/O and general helpers
+│   ├── __init__.py
+│   ├── _config.py                 # Internal path configuration
+│   └── circuitBuilder.py          # Circuit-construction utilities
+├── configs/                       # Reproducible simulation configurations
+├── results/                       # Research notebooks and analysis workflows
+├── .gitattributes
+├── .gitignore
+├── LICENSE
+├── pyproject.toml
+├── requirements.txt
+└── README.md
 ```
 
 ## Installation
 
-1. Clone the repository:
+### Clone the repository
+
 ```bash
 git clone https://github.com/oscar-vbl/Lattice-QFT-Quantum-Simulation.git
 cd Lattice-QFT-Quantum-Simulation
 ```
 
-2. Install dependencies:
+### Create an isolated environment
+
+```bash
+python -m venv .venv
+source .venv/bin/activate
+```
+
+On Windows PowerShell:
+
+```powershell
+.venv\Scripts\Activate.ps1
+```
+
+### Install the package
+
+```bash
+python -m pip install --upgrade pip
+pip install -e .
+```
+
+Alternatively, install the declared dependencies directly:
+
 ```bash
 pip install -r requirements.txt
 ```
 
-3. (Optional) Install in development mode:
-```bash
-pip install -e .
+## Quick Start
+
+```python
+from QuantumSimulation import SchwingerSimulation
+from QuantumSimulation.Utils import loadJsonConfig
+
+config = loadJsonConfig("configs/example.json")
+simulator = SchwingerSimulation(config)
+simulator.run_simulation()
+
+print(simulator.vacuum_energy)
+print(simulator.evolution_data.head())
 ```
 
-## Current Limitations
+A typical workflow consists of:
 
-- **Only Schwinger Model Implemented**: This is the sole gauge theory currently supported. Extensions to SU(2) or higher-dimensional QED are future work.
-- **Small System Sizes**: Simulations limited to ~10-20 qubits on current NISQ devices due to noise and circuit depth.
-- **Classical Density Matrix Only**: Uses Qiskit Aer statevector simulator; no noise models implemented yet.
-- **Vacuum Preparation**: Strong-field regimes require careful initialization and choice of ansatz.
+1. defining the model and numerical parameters in a configuration file;
+2. constructing the Hamiltonian and selected symmetry constraints;
+3. preparing the initial state variationally or loading a stored state;
+4. applying a quench or real-time evolution protocol;
+5. evaluating the configured observables;
+6. analysing uncertainties, scaling and physical regimes.
 
-## References
+Configuration filenames evolve with the research workflows. See [`configs/`](configs/) and the notebooks under [`results/`](results/) for current executable examples.
 
-- Qiskit Documentation: https://qiskit.org/documentation/
+## Research Workflows
+
+The `results/` directory contains reproducible notebooks and supporting scripts built on top of the simulation package. The workflows are examples of how the framework can be used, rather than a complete definition of its scope.
+
+Current studies include:
+
+- **Ansatz validation:** comparison of variational families through energy, fidelity, optimization behaviour, circuit depth and entangling-gate counts.
+- **Vacuum persistence:** finite-size analysis, extraction of an effective vacuum-decay rate, uncertainty propagation and comparison with Schwinger-like behaviour.
+
+Planned studies include vacuum topology, excited-state spectroscopy, entanglement diagnostics and additional real-time protocols.
+
+## Testing
+
+Run the complete test suite from the repository root:
+
+```bash
+python -m pytest
+```
+
+Or run only the package tests:
+
+```bash
+python -m pytest QuantumSimulation/Tests
+```
+
+The GitHub Actions workflow runs automated checks on supported Python environments.
+
+## Roadmap
+
+Possible research and software extensions include:
+
+- excited-state algorithms, including VQD-like workflows;
+- entanglement entropy and mutual information;
+- fidelity susceptibility and geometric diagnostics;
+- topological sectors and discrete-symmetry studies;
+- time-dependent external fields and pulse protocols;
+- tensor-network-inspired ansatzes;
+- measurement and hardware-noise mitigation;
+- additional Abelian and non-Abelian lattice gauge models;
+- scalable execution on quantum hardware and high-performance simulators.
+
+The roadmap is exploratory. New studies are introduced when they are physically motivated and compatible with the validated simulation infrastructure.
+
+## Reproducibility
+
+Simulation parameters are stored in configuration files, while generated states, tabular data and plots are handled through the repository utilities. For reproducible academic use, record:
+
+- the repository release or commit;
+- the configuration file;
+- the random seed, when applicable;
+- the backend and primitive versions;
+- the ansatz and optimizer settings;
+- the Trotter discretization and measurement budget.
+
+## Citation
+
+If this software contributes to academic work, please cite the specific repository release used in the study. Machine-readable citation metadata is provided in [`CITATION.cff`](CITATION.cff).
+
+```bibtex
+@software{vicente_blazquez_lattice_qft_quantum_simulation,
+  author  = {Vicente Blázquez, Oscar},
+  title   = {{Lattice-QFT-Quantum-Simulation}},
+  url     = {https://github.com/oscar-vbl/Lattice-QFT-Quantum-Simulation},
+  note    = {Quantum simulation framework for lattice quantum field theories}
+}
+```
+
+## License
+
+This project is distributed under the terms of the [MIT License](LICENSE).
 
 ## Disclaimer
 
-Creation of README.md files has been assisted by AI.
+This is research software under active development. Numerical and physical results should be interpreted together with the assumptions, finite-size effects, discretization choices and uncertainty analyses documented in the corresponding workflows.
 
+Parts of the documentation were initially drafted with AI assistance and subsequently reviewed and edited by the repository author.
