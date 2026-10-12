@@ -5,7 +5,7 @@ from qiskit.primitives import (
     PubResult,
 )
 import numpy as np
-from QuantumSimulation.Operators import buildPairCreationOperators
+from QuantumSimulation.operators import BaseOperator
 
 class PairCreationObservable(BaseObservable):
     """
@@ -16,13 +16,15 @@ class PairCreationObservable(BaseObservable):
     while for odd sites (positrons) we count the number of positrons created as n_occ.
     """
 
-    def __init__(self, qubits_num: int, precision=None):
+    def __init__(self, operator: BaseOperator, precision=None):
         super().__init__("Pair_Creation", "estimator")
         self.precision = precision
-        self.qubits_num = qubits_num
+        self.num_qubits = operator.num_qubits
 
         # Prebuild number of electrons and positrons operators.
-        self.n_e_obs, self.n_p_obs = buildPairCreationOperators(qubits_num)
+        self.operator = operator
+
+        self.n_e_obs, self.n_p_obs = self.operator.to_qiskit()
 
     def get_pub(self, state: QuantumCircuit) -> tuple:
         # Send in one pub
@@ -38,21 +40,13 @@ class PairCreationObservable(BaseObservable):
     def process_result_data(
         self, evs, stds
     ) -> tuple[tuple[float, float], tuple[float, float]]:
-        evs_real = np.squeeze(evs).real
-        stds_real = np.squeeze(stds).real
+        evs_real = np.atleast_1d(np.squeeze(evs).real)
+        stds_real = np.atleast_1d(np.squeeze(stds).real)
 
-        n_e, n_p = 0.0, 0.0
-        err_e_sq, err_p_sq = 0.0, 0.0
-
-        for i, (val, err) in enumerate(zip(evs_real, stds_real)):
-            if i % 2 == 0:  # Positrons (even sites)
-                n_p += 0.5 * (val + 1)
-                err_p_sq += (0.5 * err) ** 2
-            else:  # Electrons (odd sites)
-                n_e += 0.5 * (1 - val)
-                err_e_sq += (0.5 * err) ** 2
-
-        return (n_e, n_p), (np.sqrt(err_e_sq), np.sqrt(err_p_sq))
+        return (
+            (float(evs_real[0]),  float(evs_real[1])),
+            (float(stds_real[0]), float(stds_real[1]))
+        )
 
     def calculate_exact(
         self, state: Statevector | QuantumCircuit

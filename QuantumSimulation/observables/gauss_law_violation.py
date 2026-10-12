@@ -5,7 +5,7 @@ from qiskit.primitives import (
     PubResult,
 )
 import numpy as np
-from QuantumSimulation.Operators import gauss_operator
+from QuantumSimulation.operators import BaseOperator
 
 class GaussLawViolationObservable(BaseObservable):
     """
@@ -13,15 +13,17 @@ class GaussLawViolationObservable(BaseObservable):
     of all the sites on the lattice.
     """
 
-    def __init__(self, qubits_num: int, precision=None):
+    def __init__(self, operator: BaseOperator, precision=None):
         super().__init__("Gauss_Law_Violation", "estimator")
         self.precision = precision
-        self.qubits_num = qubits_num
+        self.num_qubits = operator.num_qubits
 
+        self.operator = operator
+        gauss_ops = self.operator.to_qiskit()
         # Prebuild squared Gauss operators for all sites.
         self.gauss_squared_ops = []
-        for n in range(qubits_num):
-            op = gauss_operator(n, qubits_num) @ gauss_operator(n, qubits_num)
+        for n in range(self.num_qubits):
+            op = gauss_ops[n] @ gauss_ops[n]
             self.gauss_squared_ops.append(op.simplify())
 
     def get_pub(self, state: QuantumCircuit) -> tuple:
@@ -55,7 +57,7 @@ class GaussLawViolationObservable(BaseObservable):
     def calculate_exact(self, state: Statevector | QuantumCircuit) -> tuple:
         total_violation = 0.0
         for op in self.gauss_squared_ops:
-            val = self._exactOperatorExpectation(state, op)
+            val, error = self._exactOperatorExpectation(state, op)
             total_violation += np.abs(val)
 
         return float(total_violation), 0.0

@@ -2,15 +2,18 @@ from __future__ import annotations
 from typing import TYPE_CHECKING
 if TYPE_CHECKING:
     from qiskit_ibm_runtime import QiskitRuntimeService
-from qiskit_aer import AerSimulator
-from qiskit import QuantumCircuit, generate_preset_pass_manager
-from qiskit.transpiler.layout import TranspileLayout
+    from qiskit_aer import AerSimulator
+    from qiskit import QuantumCircuit
+    from qiskit.transpiler.layout import TranspileLayout
+from qiskit import generate_preset_pass_manager
+from QuantumSimulation.operators import BaseOperator
 
 def apply_transpilation(
-            backend: AerSimulator | QiskitRuntimeService,
-            circuit: QuantumCircuit,
-            initial_layout: TranspileLayout | None = None,
-            layout_circuits: list[QuantumCircuit]=[]):
+        backend: AerSimulator | QiskitRuntimeService,
+        circuit: QuantumCircuit,
+        initial_layout: TranspileLayout | None = None,
+        layout_circuits: list[BaseOperator] | None = None
+    ) -> tuple[QuantumCircuit, list[BaseOperator]]:
     """
     Transpile a quantum circuit to the target backend's instruction set architecture (ISA) using Qiskit's PassManager.
     
@@ -32,12 +35,14 @@ def apply_transpilation(
     tp_layout_circuits : list of QuantumCircuit
         The layout-dependent circuits adapted to the transpiled circuit's qubit layout. If no layout was applied, returns the original layout_circuits.
     """
+    if layout_circuits is None:
+        layout_circuits = []
     # Generate PassManager with the specified backend (AerSimulator or IBM Runtime)
     pm = generate_preset_pass_manager(
-            optimization_level=1,
-            backend=backend,
-            initial_layout=initial_layout
-        )
+        optimization_level=1,
+        backend=backend,
+        initial_layout=initial_layout
+    )
 
     # Transpile ansatz to the target backend's ISA using the PassManager
     transpiled_circuit = pm.run(circuit)

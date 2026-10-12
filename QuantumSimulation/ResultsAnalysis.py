@@ -240,9 +240,8 @@ def fit_persistence(
     simulated_gamma = popt[0]
     gamma_err       = float(np.sqrt(np.diag(pcov))[0])
 
-    y_fit = fit_model(t_fit, simulated_gamma, popt[1])
-    stats = calculate_fit_quality(p_fit, y_fit, sigma_fit)
-    stats = calculate_fit_quality(np.log(p_fit), np.log(y_fit), sigma_fit/p_fit)
+    #y_fit = fit_model(t_fit, simulated_gamma, popt[1])
+    #stats = calculate_fit_quality(np.log(p_fit), np.log(y_fit), sigma_fit/p_fit)
 
 
     # ------------------------------------------------------------------ #
@@ -262,7 +261,8 @@ def fit_persistence(
             E_field_columns = [col for col in evolution_error.columns if col.startswith("E_link")]
             E_array = np.array([evolution_data.iloc[0][col] for col in E_field_columns]) # Assuming error is constant
             delta_E_array = np.array([evolution_error.iloc[0][col] for col in E_field_columns]) # Assuming error is constant
-            gamma_func = lambda E: a * (abs(E) / (2 * np.pi)) * np.exp(-(np.pi * m**2) / abs(E))
+            def gamma_func(E):
+                return a * (abs(E) / (2 * np.pi)) * np.exp(-(np.pi * m**2) / abs(E))
             gamma_analytical = sum(gamma_func(E) for E in E_array if abs(E) > 1e-6)
             gamma_analytical_err = error_gamma_schwinger(E_array, delta_E_array, gamma_func)
         else:
@@ -271,7 +271,8 @@ def fit_persistence(
             E_array, _ = E_observable.calculate_exact(state)
 
             gamma_analytical = sum(
-                a * (abs(E) / (2 * np.pi)) * np.exp(-(np.pi * m**2) / abs(E))
+                gamma_func(E)
+
                 for E in E_array if abs(E) > 1e-6
             )
             gamma_analytical_err = 0.0
@@ -351,26 +352,26 @@ def error_gamma_schwinger(
     E_array = np.array(E_array, dtype=float)
     delta_E_array = np.array(delta_E_array, dtype=float)
     
-    # Vector para guardar las derivadas parciales
+    # Array to save partial derivatives
     gradiente = np.zeros_like(E_array)
     
-    # Calcular la derivada parcial para cada componente i
+    # Calculate partial derivative for each component i
     for i in range(len(E_array)):
-        # Hacemos copias para no pisar el array original
+        # Make copies to avoid modifying the original array
         E_plus = E_array.copy()
         E_minus = E_array.copy()
         
-        # Perturbamos SOLO la componente i
+        # Perturbation only on component i
         E_plus[i] += h
         E_minus[i] -= h
 
         gamma_plus = gamma_func(E_plus[i])
         gamma_minus = gamma_func(E_minus[i])
 
-        # Diferencia finita central
+        # Central finite difference
         gradiente[i] = (gamma_plus - gamma_minus) / (2 * h)
         
-    # Propagación de errores en cuadratura
+    # Propagation of errors in quadrature
     error_gamma = np.sqrt(np.sum((gradiente * delta_E_array)**2))
     
     return error_gamma

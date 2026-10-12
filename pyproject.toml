@@ -10,3 +10,32 @@ include = ["QuantumSimulation", "QuantumSimulation.*"]
 test = [
     "pytest", "pytest-cov"
 ]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+python_files = ["test_*.py"]
+addopts = "-ra --strict-markers"
+
+markers = [
+    "integration: multi-module integration tests",
+    "slow: computationally expensive tests",
+    "aer: tests requiring qiskit-aer",
+    "ibm: tests requiring IBM Runtime credentials",
+]
+
+filterwarnings = [
+    "ignore:Since backends now support running jobs.*IBMFractionalTranslationPlugin.*:DeprecationWarning:stevedore.extension",
+]
+
+[tool.coverage.run]
+branch = true
+source = ["QuantumSimulation"]
+
+[tool.coverage.report]
+show_missing = true
+fail_under = 50
+omit = [
+    "*/tests/*",
+    "*/Plots.py",
+    "*/ResultsAnalysis.py",
+]

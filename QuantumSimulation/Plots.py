@@ -8,7 +8,7 @@ from qiskit.circuit import QuantumCircuit, Parameter, QuantumRegister
 import copy
 
 def set_plot_style(
-        style: str = "academic"
+    style: str = "academic"
 ) -> None:
     """
     Set the style of the plots according to the specified style.
@@ -163,7 +163,8 @@ def plot_simulated_vs_analytical(
     """
     set_plot_style()
     # Add time offset to make plot start from the end of the Zeno regime (T_Zeno_End) instead of t=0
-    if time_offset is None: time_offset = 0
+    if time_offset is None:
+        time_offset = 0
     t_plot = t_values + time_offset
     fig, (ax1, ax2) = plt.subplots(1, 2, figsize=(13, 6))
 
@@ -255,7 +256,7 @@ def plot_simulated_vs_analytical(
         decay_model(x, gamma_simulated, *model_args), # Pass on np.exp because axis is in log scale
         "r--",
         lw=1.5,
-        label=f"Fit"
+        label="Fit"
     )
     ax2.plot(
         t_plot,
@@ -280,20 +281,21 @@ def plot_simulated_vs_analytical(
 
     # Add error bands
     # Done here because they move with the offset
-    if time_offset is None: time_offset = 0
+    if time_offset is None:
+        time_offset = 0
     if sigma is not None:
         ax1.fill_between(
             t_plot,
             persistence - sigma,
             persistence + sigma,
-            color='blue', alpha=0.1, label=f'Simulation Uncertainty (±$\\sigma$)'
+            color='blue', alpha=0.1, label='Simulation Uncertainty (±$\\sigma$)'
         )
     if gamma_err is not None:
         ax1.fill_between(
             t_plot,
             decay_model(t_values, gamma_simulated - gamma_err, *model_args),
             decay_model(t_values, gamma_simulated + gamma_err, *model_args),
-            color='red', alpha=0.1, label=f'Fit Uncertainty (±$\\sigma$)'
+            color='red', alpha=0.1, label='Fit Uncertainty (±$\\sigma$)'
         )
 
     plt.suptitle("Exponential Decay Fit and Schwinger Prediction")
@@ -453,13 +455,7 @@ def ind_plot_gamma_electricField(
         fmt="ro", markersize=5, capsize=3, elinewidth=1, ecolor="red", alpha=0.7,
         label="$\\log(\\Gamma / E)$"
     )
-    num = "{" + "1" + "}"
-    field = "{" + field_tag + "}"
-    #ax.set_xlabel(rf"$\frac{num}{field}$")
     ax.set_xlabel(rf"$1/{field_tag}$")
-    gamma = "{" + "\\Gamma" + "}"
-    field = "{" + field_tag + "}"
-    #ax.set_ylabel(rf"$\log\left(\frac{gamma}{field}\right)$")
     ax.set_ylabel(rf"$\log\left(\Gamma/{field_tag}\right)$")
 
     # Fit to a line to check if it's linear in log scale
@@ -524,13 +520,13 @@ def ind_plot_gamma_electricField(
         y_fit_points = linear_model(x, a_fit, b_fit)
         reduced_chi_sq, r2_weighted = calculate_fit_quality(y, y_fit_points, y_err)
 
-    r_squared = np.corrcoef(x, y)[0, 1] ** 2
+    #r_squared = np.corrcoef(x, y)[0, 1] ** 2
     ax.plot(
         x_fit,
         y_fit,
         "b--",
         #label=f"Fit: $a={a_fit:.4f}, b={b_fit:.4f}$\n$R^2={r_squared:.4f}$\n$\chi_v^2={reduced_chi_sq:.4f}$",
-        label=f"Linear Fit: $y=a \\cdot x + b$",
+        label="Linear Fit: $y=a \\cdot x + b$",
     )
     ax.legend(loc="lower left")
 
@@ -761,12 +757,13 @@ def plot_validation_ansatzes(
             linewidth=1.5,
             label=f"{ansatz} VQE",
         )
+        x_labels = [str(qubit) for qubit in qubits_nums]
         ax1.set_xticks(qubits_nums)
         # Force X-axis to show exact numbers
-        ax1.set_xticklabels([str(l) for l in qubits_nums])
+        ax1.set_xticklabels(x_labels)
         ax2.set_xticks(qubits_nums)
         # Force X-axis to show exact numbers
-        ax2.set_xticklabels([str(l) for l in qubits_nums])
+        ax2.set_xticklabels(x_labels)
 
     ax1.legend(title="Ansatz")
     ax2.legend(title="Ansatz")
@@ -842,10 +839,10 @@ def plot_duration_ansatzes(
             linewidth=1.5,
             label=f"{ansatz} VQE",
         )
-
+        x_labels = [str(qubit) for qubit in qubits_nums]
         ax.set_xticks(qubits_nums)
         # Force X-axis show exact numbers
-        ax.set_xticklabels([str(l) for l in qubits_nums])
+        ax.set_xticklabels(x_labels)
 
     ax.legend(title="Ansatz")
 

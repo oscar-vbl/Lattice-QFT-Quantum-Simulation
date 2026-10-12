@@ -5,7 +5,7 @@ from qiskit.primitives import (
     PubResult,
 )
 import numpy as np
-from QuantumSimulation.Operators import buildElectricFieldOperators
+from QuantumSimulation.operators import BaseOperator
 
 class ElectricFieldObservable(BaseObservable):
     """
@@ -13,14 +13,14 @@ class ElectricFieldObservable(BaseObservable):
     Returns an array of L-1 values.
     """
 
-    def __init__(self, qubits_num: int, e0: float = 0.0, precision=None):
+    def __init__(self, operator: BaseOperator, precision=None):
         super().__init__("Electric_Field", "estimator")
-        self.qubits_num = qubits_num
-        self.e0 = e0
+        self.num_qubits = operator.num_qubits
         self.precision = precision
 
         # Prebuild the list of L-1 operators (electric field at each lattice link)
-        self.ef_ops = buildElectricFieldOperators(qubits_num, e0)
+        self.operator = operator
+        self.ef_ops = self.operator.to_qiskit()
 
     def get_pub(self, state: QuantumCircuit) -> tuple:
         # Send all L-1 operators in one PUB
@@ -49,7 +49,7 @@ class ElectricFieldObservable(BaseObservable):
     ) -> tuple[np.ndarray, np.ndarray]:
         ef_values = []
         for op in self.ef_ops:
-            val = self._exactOperatorExpectation(state, op)
+            val, error = self._exactOperatorExpectation(state, op)
             ef_values.append(val)
 
         return np.array(ef_values), np.array([0.0] * len(ef_values))

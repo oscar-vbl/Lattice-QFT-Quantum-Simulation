@@ -5,6 +5,7 @@ from qiskit.primitives import (
     SamplerPubResult,
 )
 import numpy as np
+import copy
 
 from abc import ABC, abstractmethod
 from typing import Iterable
@@ -57,6 +58,13 @@ class BaseObservable(ABC):
     def __init__(self, name: str, primitive_type: str):
         self.name = name
         self.primitive_type = primitive_type  # "estimator" or "sampler"
+
+    def __repr__(self):
+        return f"BaseObservable(name={self.name}, primitive_type={self.primitive_type})"
+
+    def copy(self):
+        """Creates a deep copy of the observable."""
+        return copy.deepcopy(self)
 
     # pub for hardware execution (Qiskit Primitives)
     @abstractmethod

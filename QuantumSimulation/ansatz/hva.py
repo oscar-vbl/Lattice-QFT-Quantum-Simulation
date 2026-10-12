@@ -1,15 +1,16 @@
+from qiskit import transpile
 from qiskit.circuit import QuantumCircuit, Parameter
+#from qiskit.circuit import Parameter
 from qiskit.quantum_info import SparsePauliOp
 from qiskit.circuit.library import PauliEvolutionGate
 from qiskit.synthesis import SuzukiTrotter
-from qiskit import QuantumCircuit, transpile
 from qiskit.circuit.library import XXPlusYYGate
-
+from QuantumSimulation.operators import BaseOperator
 
 def build_schwinger_hva(
     num_qubits: int,
     reps: int,
-    hamiltonian: SparsePauliOp,
+    hamiltonian: BaseOperator,
     optimization_level: int | None = 3,
     **kwargs,
 ):
@@ -22,8 +23,8 @@ def build_schwinger_hva(
         Number of qubits in the system.
     reps: int
         Number of repetitions (layers) in the HVA.
-    hamiltonian: SparsePauliOp
-        Hamiltonian of the system as a SparsePauliOp.
+    hamiltonian: BaseOperator
+        Hamiltonian of the system as a BaseOperator.
     optimization_level: int or None, optional
         Optimization level for transpilation (0-3) or None to skip transpilation. Default is 3.
     **kwargs:
@@ -39,18 +40,19 @@ def build_schwinger_hva(
     xy_odd_list = []
 
     # 1. Classify hamiltonian terms
-    for term in hamiltonian.to_sparse_list():
-        pauli_str, indices, coeff = term
+    for part, operators in hamiltonian.terms_dict.items():
+        for term in operators:
+            pauli_str, indices, coeff = term
 
-        if "Z" in pauli_str:
-            z_list.append(term)
-        elif "X" in pauli_str or "Y" in pauli_str:
-            # hopping terms affect two contiguous qubits
-            first_idx = min(indices)
-            if first_idx % 2 == 0:
-                xy_even_list.append(term)
-            else:
-                xy_odd_list.append(term)
+            if "Z" in pauli_str:
+                z_list.append(term)
+            elif "X" in pauli_str or "Y" in pauli_str:
+                # hopping terms affect two contiguous qubits
+                first_idx = min(indices)
+                if first_idx % 2 == 0:
+                    xy_even_list.append(term)
+                else:
+                    xy_odd_list.append(term)
 
     # 2. Build Sparse operators for each block
     H_Z = SparsePauliOp.from_sparse_list(z_list, num_qubits=num_qubits)
@@ -106,7 +108,7 @@ def build_schwinger_hva(
 
 
 def build_schwinger_hva_full(
-    num_qubits: int, reps: int, hamiltonian: SparsePauliOp, **kwargs
+    num_qubits: int, reps: int, hamiltonian: BaseOperator, **kwargs
 ):
     """
     Build simple Hamiltonian Variational Ansatz (HVA) with original hamiltonian terms.
@@ -119,8 +121,8 @@ def build_schwinger_hva_full(
         Number of qubits in the system.
     reps: int
         Number of repetitions (layers) in the HVA.
-    hamiltonian: SparsePauliOp
-        Hamiltonian of the system as a SparsePauliOp.
+    hamiltonian: BaseOperator
+        Hamiltonian of the system as a BaseOperator.
     **kwargs:
         Additional parameters (not used in this function but can be used for extensions).
 
@@ -135,19 +137,20 @@ def build_schwinger_hva_full(
     gauge_terms = []
     xy_terms = []
 
-    for term in hamiltonian.to_sparse_list():
-        pauli_str, indices, coeff = term
-        coeff = coeff.real  # Ensure real part
+    for part, operators in hamiltonian.terms_dict.items():
+        for term in operators:
+            pauli_str, indices, coeff = term
+            coeff = coeff.real  # Ensure real part
 
-        if "Z" in pauli_str:
-            if len(indices) == 1:
-                mass_terms.append((indices[0], coeff))
-            elif len(indices) >= 2:
-                # Assume Gauge ZZ interactions
-                gauge_terms.append((indices[0], indices[1], coeff))
+            if "Z" in pauli_str:
+                if len(indices) == 1:
+                    mass_terms.append((indices[0], coeff))
+                elif len(indices) >= 2:
+                    # Assume Gauge ZZ interactions
+                    gauge_terms.append((indices[0], indices[1], coeff))
 
-        elif "X" in pauli_str:
-            xy_terms.append((min(indices), max(indices), coeff))
+            elif "X" in pauli_str:
+                xy_terms.append((min(indices), max(indices), coeff))
 
     hva_circuit = QuantumCircuit(num_qubits)
 
@@ -181,7 +184,7 @@ def build_schwinger_hva_full(
 
 
 def build_schwinger_hva_balanced(
-    num_qubits: int, reps: int, hamiltonian: SparsePauliOp, **kwargs
+    num_qubits: int, reps: int, hamiltonian: BaseOperator, **kwargs
 ):
     """
     Build simple Hamiltonian Variational Ansatz (HVA) with original hamiltonian terms.
@@ -196,8 +199,8 @@ def build_schwinger_hva_balanced(
         Number of qubits in the system.
     reps: int
         Number of repetitions (layers) in the HVA.
-    hamiltonian: SparsePauliOp
-        Hamiltonian of the system as a SparsePauliOp.
+    hamiltonian: BaseOperator
+        Hamiltonian of the system as a BaseOperator.
     **kwargs:
         Additional parameters (not used in this function but can be used for extensions).
 
@@ -212,23 +215,24 @@ def build_schwinger_hva_balanced(
     xy_even = []
     xy_odd = []
 
-    for term in hamiltonian.to_sparse_list():
-        pauli_str, indices, coeff = term
-        coeff = coeff.real
+    for part, operators in hamiltonian.terms_dict.items():
+        for term in operators:
+            pauli_str, indices, coeff = term
+            coeff = coeff.real
 
-        if "Z" in pauli_str:
-            if len(indices) == 1:
-                mass_terms.append((indices[0], coeff))
-            elif len(indices) >= 2:
-                # Gauge ZZ electric field
-                gauge_terms.append((indices[0], indices[1], coeff))
+            if "Z" in pauli_str:
+                if len(indices) == 1:
+                    mass_terms.append((indices[0], coeff))
+                elif len(indices) >= 2:
+                    # Gauge ZZ electric field
+                    gauge_terms.append((indices[0], indices[1], coeff))
 
-        elif "X" in pauli_str:
-            q1, q2 = min(indices), max(indices)
-            if q1 % 2 == 0:
-                xy_even.append((q1, q2, coeff))
-            else:
-                xy_odd.append((q1, q2, coeff))
+            elif "X" in pauli_str:
+                q1, q2 = min(indices), max(indices)
+                if q1 % 2 == 0:
+                    xy_even.append((q1, q2, coeff))
+                else:
+                    xy_odd.append((q1, q2, coeff))
 
     hva_circuit = QuantumCircuit(num_qubits)
 
@@ -253,6 +257,9 @@ def build_schwinger_hva_balanced(
 
         # Apply hopping dividing the qubits in inner and border
         def apply_hopping_with_edges(q1, q2, coeff):
+            """
+            Helper function to apply hopping dividing the qubits in inner and border.
+            """
             if q1 == 0:
                 current_theta = theta_h_L  # Left edge
             elif q2 == num_qubits - 1:
